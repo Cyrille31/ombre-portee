@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ombre portée</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --line:#d8dbe0; --text:#1d2330; --muted:#667085;
+  --accent:#2563eb; --accent-soft:#e8efff; --warn:#b45309;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);background:var(--bg)}
+#app{display:flex;height:100vh;overflow:hidden}
+aside{width:340px;min-width:300px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:8px 12px 40px}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+h1{font-size:16px;margin:4px 0 8px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;border-top:1px solid var(--line);padding-top:10px}
+section:first-of-type h2{border-top:none;padding-top:0}
+button,select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);cursor:pointer}
+button:hover{border-color:#aab;background:#fafbff}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+button.small{padding:1px 6px;font-size:12px}
+input[type=text]{font:inherit;padding:3px 6px;border:1px solid var(--line);border-radius:6px;width:80px;text-align:right}
+input[type=range]{width:100%}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:5px 0}
+.f{display:flex;align-items:center;gap:6px;margin:4px 0}
+.f .lbl{width:110px;color:var(--text)}
+.f .u{color:var(--muted)}
+.drag{cursor:ns-resize;user-select:none;border-bottom:1px dotted #99a}
+.drag:hover{color:var(--accent)}
+.seg{display:inline-flex}
+.seg button{border-radius:0}
+.seg button:first-child{border-radius:6px 0 0 6px}
+.seg button:last-child{border-radius:0 6px 6px 0;margin-left:-1px}
+.clock{display:flex;align-items:baseline;gap:4px;font-size:20px;font-weight:600;margin:4px 0 2px;user-select:none}
+.sc{cursor:ns-resize;padding:1px 4px;border-radius:5px;border:1px solid transparent}
+.sc:hover{background:var(--accent-soft);border-color:#b9c9f5}
+.sc.big{font-size:26px}
+.hint{color:var(--muted);font-size:11.5px}
+.info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
+.info b{font-weight:600}
+.warn{color:var(--warn)}
+input.big{font-size:18px;font-weight:600;width:90px}
+.list{margin:4px 0;padding:0;list-style:none}
+.list li{display:flex;align-items:center;gap:6px;padding:2px 0}
+.list li .t{flex:1}
+.sw{width:12px;height:12px;border-radius:3px;display:inline-block;flex:none}
+#toolbar{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+#toolbar .sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+#stage{flex:1;position:relative;min-height:0}
+#cv{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#status{padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#status.msg{color:var(--text)}
+#printArea{display:none}
+@media print{
+  @page{margin:10mm}
+  html,body{height:auto;background:#fff}
+  #app{display:none!important}
+  #printArea{display:block}
+  #printArea h1{font-size:18px;margin:0 0 4px}
+  #printInfo{font-size:11px;margin-bottom:6px;columns:2}
+  #printImg{width:100%;max-height:170mm;object-fit:contain;border:1px solid #999}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<aside>
+  <h1>☀ Ombre portée</h1>
+
+  <section>
+    <h2>Date et heure</h2>
+    <div class="clock" title="Molette ou glisser verticalement pour changer. Double-clic pour saisir.">
+      <span class="sc" id="fDay">1</span>
+      <span class="sc" id="fMonth">janvier</span>
+      <span class="sc" id="fYear">2026</span>
+      <span style="width:10px"></span>
+      <span class="sc big" id="fHour">12</span><span class="big" style="font-size:26px">:</span><span class="sc big" id="fMin">00</span>
+    </div>
+    <div class="hint">Molette sur le jour, le mois, l'année, l'heure ou les minutes (Maj = pas fin). Double-clic pour saisir.</div>
+    <div class="row">
+      <div class="seg"><button id="btnLocal">Heure locale</button><button id="btnUTC">TU</button></div>
+      <span id="tzInfo" class="hint"></span>
+    </div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:44px">Heure</span><input type="range" id="rTime" min="0" max="1439" step="1" style="flex:1"></div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:44px">Jour</span><input type="range" id="rDay" min="0" max="365" step="1" style="flex:1"></div>
+    <div class="row">
+      <button id="btnPlay">▶ Animer la journée</button>
+      <select id="playSpeed" title="Vitesse d'animation">
+        <option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
+      </select>
+      <button id="btnNow">Maintenant</button>
+    </div>
+    <div id="sunInfo" class="info"></div>
+  </section>
+
+  <section>
+    <h2>Immeuble</h2>
+    <div class="f"><span class="lbl drag" data-for="iH"><b>Hauteur</b></span><input type="text" id="iH" class="big"><span class="u">m</span><span id="levels" class="hint"></span></div>
+    <div class="f"><span class="lbl drag" data-for="iW">Longueur</span><input type="text" id="iW"><span class="u">m</span></div>
+    <div class="f"><span class="lbl drag" data-for="iL">Largeur</span><input type="text" id="iL"><span class="u">m</span></div>
+    <div class="f"><span class="lbl drag" data-for="iA">Rotation</span><input type="text" id="iA"><span class="u">°</span></div>
+    <div class="hint">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
+    <div class="row">
+      <button id="btnDraw">Dessiner un immeuble</button>
+      <button id="btnResetB">Position d'origine</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lieu et orientation</h2>
+    <div class="row"><select id="city" style="width:100%"><option value="">— Choisir une ville (ou saisir les coordonnées) —</option></select></div>
+    <div class="f"><span class="lbl drag" data-for="iLat">Latitude</span><input type="text" id="iLat"><span class="u">° N</span></div>
+    <div class="f"><span class="lbl drag" data-for="iLon">Longitude</span><input type="text" id="iLon"><span class="u">° E</span></div>
+    <div class="f"><span class="lbl drag" data-for="iTz">Fuseau (hiver)</span><input type="text" id="iTz"><span class="u">h / TU</span></div>
+    <div class="row"><label><input type="checkbox" id="cDst"> Changement d'heure automatique (règle européenne)</label></div>
+    <div class="f"><span class="lbl drag" data-for="iNorth">Nord du plan</span><input type="text" id="iNorth"><span class="u">°</span></div>
+    <div class="hint">0° = nord en haut du plan ; valeur positive = nord tourné dans le sens horaire.</div>
+  </section>
+
+  <section>
+    <h2>Échelle (segment rouge)</h2>
+    <div class="f"><span class="lbl drag" data-for="iScale">Longueur réelle</span><input type="text" id="iScale"><span class="u">m</span></div>
+    <div id="scaleInfo" class="hint"></div>
+    <div class="row">
+      <button id="btnScale">Tracer l'échelle</button>
+      <button id="btnOcr" title="Lit le nombre écrit près du segment rouge (nécessite Internet la première fois)">Lire la longueur sur le plan</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Trajectoire de l'ombre d'un point</h2>
+    <div class="row"><button id="btnTraj">Choisir un point du toit…</button><button id="btnTrajClear" class="small">Tout effacer</button></div>
+    <div class="hint">Cliquez sur un coin (aimanté) ou un point du toit : la courbe de son ombre pour la journée choisie est tracée, graduée heure par heure.</div>
+    <ul id="trajList" class="list"></ul>
+  </section>
+
+  <section>
+    <h2>Scénario</h2>
+    <div class="row"><label><input type="checkbox" id="cScen" checked> Afficher les ombres du scénario</label></div>
+    <div class="row"><label><input type="checkbox" id="cCur" checked> Afficher aussi l'ombre de l'instant courant</label></div>
+    <div class="row">
+      <button id="btnScenAdd">+ Instant courant</button>
+      <button id="btnScenClear" class="small">Vider</button>
+    </div>
+    <div class="row">
+      <select id="scenPreset" style="width:100%">
+        <option value="">— Ajouter un modèle —</option>
+        <option value="sol">Solstices et équinoxes à l'heure courante</option>
+        <option value="day2">Journée courante, de 8 h à 18 h toutes les 2 h</option>
+        <option value="day1">Journée courante, de 7 h à 19 h toutes les heures</option>
+        <option value="months">Le 21 de chaque mois à l'heure courante</option>
+      </select>
+    </div>
+    <ul id="scenList" class="list"></ul>
+  </section>
+
+  <section>
+    <h2>Affichage</h2>
+    <div class="row" style="gap:2px"><span class="hint" style="width:110px">Opacité de l'ombre</span><input type="range" id="rOpa" min="0.1" max="0.9" step="0.05" style="flex:1"></div>
+    <div class="row"><label><input type="checkbox" id="cOrig" checked> Contour de l'emplacement d'origine</label></div>
+    <div class="row"><label><input type="checkbox" id="cDims" checked> Cotes sur le plan</label></div>
+    <div class="hint" style="margin-top:8px">
+      Plan : molette = zoom, glisser le fond (ou clic droit) = déplacer.<br>
+      Clavier : ←/→ ±15 min, ↑/↓ ±1 jour, PgPréc/PgSuiv ±1 mois, +/− hauteur, Espace = animer, Échap = annuler.
+    </div>
+  </section>
+</aside>
+
+<main>
+  <div id="toolbar">
+    <button id="btnOpen" title="Image (PNG, JPG…), PDF ou projet .ombre.json">📂 Ouvrir…</button>
+    <button id="btnDemo">Plan de démonstration</button>
+    <span class="sep"></span>
+    <button id="btnSaveProj" title="Enregistre le plan et tous les réglages pour les rouvrir plus tard">💾 Enregistrer le projet</button>
+    <button id="btnSavePlan" title="Image du plan d'origine avec l'immeuble à sa nouvelle position">🖼 Enregistrer le plan modifié</button>
+    <button id="btnExportView" title="Image de la vue actuelle avec les ombres">Exporter la vue</button>
+    <button id="btnPrint">🖨 Imprimer</button>
+    <span class="sep"></span>
+    <div class="seg">
+      <button id="mSelect" class="on">Sélection</button><button id="mTraj">Trajectoire</button><button id="mScale">Échelle</button>
+    </div>
+    <button id="btnFit" title="Afficher tout le plan">Ajuster la vue</button>
+  </div>
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="status"></div>
+</main>
+</div>
+
+<div id="printArea">
+  <h1 id="printTitle">Étude d'ombre portée</h1>
+  <div id="printInfo"></div>
+  <img id="printImg" alt="">
+</div>
+<input type="file" id="fileIn" accept="image/*,.pdf,.json,application/pdf" hidden>
+
+<script>
+'use strict';
+/* ====================================================================
+   Ombre portée — simulation de l'ombre d'un immeuble sur un plan cadastral
+   ==================================================================== */
+const $ = id => document.getElementById(id);
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+const MONTHS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const MONTHS_S = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const SC_COLORS = ['#e6194b','#2e9e3e','#f58231','#911eb4','#c9a000','#f032e6','#9a6324','#469990','#808000','#e377c2','#17becf','#555555'];
+const TR_COLORS = ['#ff7f0e','#d62728','#2ca02c','#9467bd','#8c564b','#e377c2'];
+const CITIES = [
+  ['Toulouse',43.6047,1.4442],['Paris',48.8566,2.3522],['Lyon',45.764,4.8357],['Marseille',43.2965,5.3698],
+  ['Bordeaux',44.8378,-0.5792],['Lille',50.6292,3.0573],['Nantes',47.2184,-1.5536],['Strasbourg',48.5734,7.7521],
+  ['Nice',43.7102,7.262],['Montpellier',43.6108,3.8767],['Rennes',48.1173,-1.6778],['Brest',48.3904,-4.4861],
+  ['Grenoble',45.1885,5.7245],['Clermont-Ferrand',45.7772,3.087],['Perpignan',42.6887,2.8948],['Pau',43.2951,-0.3708],
+  ['Albi',43.9289,2.1464],['Montauban',44.0176,1.355],['Tarbes',43.2328,0.0781],['Ajaccio',41.9192,8.7386]
+];
+const mod = (a, n) => ((a % n) + n) % n;
+const pad2 = n => String(n).padStart(2, '0');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const fmtNum = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d).replace('.', ',');
+const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''));
+
+/* ------------------------------------------------------------------ État */
+const S = {
+  orig: null, clean: null, origDataURL: null, fileName: 'plan',
+  origRect: null, origStyle: null, blueIdx: null,
+  building: null, height: 15, dH: 15,
+  scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
+  lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
+  day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
+  traj: [], scenario: [], showScenario: true, showCurrent: true,
+  opacity: 0.45, showOrig: true, showDims: true,
+  mode: 'select', temp: null, playing: false, playSpeed: 60,
+  dirty: true
+};
+const V = { s: 1, ox: 0, oy: 0 };
+
+/* --------------------------------------------------- Position du Soleil (NOAA) */
+function sunPos(jd, utcMin, lat, lon) {
+  const T = (jd - 2451545.0) / 36525;
+  const L0 = mod(280.46646 + T * (36000.76983 + 0.0003032 * T), 360);
+  const M = 357.52911 + T * (35999.05029 - 0.0001537 * T);
+  const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+  const Mr = M * D2R;
+  const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) + Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+  const om = (125.04 - 1934.136 * T) * D2R;
+  const lam = (L0 + C - 0.00569 - 0.00478 * Math.sin(om)) * D2R;
+  const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+  const eps = (eps0 + 0.00256 * Math.cos(om)) * D2R;
+  const decl = Math.asin(Math.sin(eps) * Math.sin(lam));
+  let y = Math.tan(eps / 2); y *= y;
+  const L0r = L0 * D2R;
+  const eqt = 4 * R2D * (y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) + 4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r)
+    - 0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr));
+  const tst = mod(utcMin + eqt + 4 * lon, 1440);
+  const ha = (tst / 4 - 180) * D2R;
+  const phi = lat * D2R;
+  const cz = Math.sin(phi) * Math.sin(decl) + Math.cos(phi) * Math.cos(decl) * Math.cos(ha);
+  let alt = 90 - Math.acos(clamp(cz, -1, 1)) * R2D;
+  if (alt > -0.575) alt += 1.02 / Math.tan((alt + 10.3 / (alt + 5.11)) * D2R) / 60;   // réfraction (Bennett)
+  const az = mod(R2D * Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(phi) - Math.tan(decl) * Math.cos(phi)) + 180, 360);
+  return { alt, az, decl: decl * R2D, eqt };
+}
+
+/* ------------------------------------------------------------ Temps */
+const toDays = (y, m, d) => Math.round(Date.UTC(y, m, d) / 864e5);
+function fromDays(n) { const t = new Date(Math.round(n) * 864e5); return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() }; }
+function lastSundayUTC1h(y, m) { const t = new Date(Date.UTC(y, m + 1, 0)); return Date.UTC(y, m, t.getUTCDate() - t.getUTCDay(), 1); }
+function isEUDST(ms) { const y = new Date(ms).getUTCFullYear(); return ms >= lastSundayUTC1h(y, 2) && ms < lastSundayUTC1h(y, 9); }
+/** Décalage (h) entre l'heure affichée et le TU, pour un jour/une minute affichés. */
+function offsetFor(day, minuteOfDay, utc) {
+  if (utc) return 0;
+  let off = S.tzStd;
+  if (S.dstAuto && isEUDST((day * 1440 + minuteOfDay - off * 60) * 60000)) off += 1;
+  return off;
+}
+function sunFor(day, minuteOfDay, off) {
+  const utcMin = minuteOfDay - off * 60;
+  return sunPos(2440587.5 + day + utcMin / 1440, utcMin, S.lat, S.lon);
+}
+function fmtTime(min) { const m = Math.round(mod(min, 1440)) % 1440; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); }
+function fmtDate(day, short) { const c = fromDays(day); return c.d + ' ' + (short ? MONTHS_S : MONTHS)[c.m] + (short ? '' : ' ' + c.y); }
+function curOff() { return offsetFor(S.day, mod(S.minute, 1440), S.utcMode); }
+function addMonths(n) {
+  const c = fromDays(S.day);
+  let m = c.m + n; const y = c.y + Math.floor(m / 12); m = mod(m, 12);
+  const dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  S.day = toDays(y, m, Math.min(c.d, dim));
+}
+/** Lever, coucher, midi solaire pour un jour (en heure affichée). */
+const dayEvCache = {};
+function dayEvents(day, utc) {
+  const key = [day, utc, S.lat, S.lon, S.tzStd, S.dstAuto].join('|');
+  if (dayEvCache.key === key) return dayEvCache.v;
+  let rise = null, set = null, noon = 0, maxAlt = -99, prev = null;
+  for (let m = 0; m <= 1440; m += 2) {
+    const a = sunFor(day, m, offsetFor(day, m, utc)).alt;
+    if (prev !== null) {
+      if (prev < 0 && a >= 0 && rise === null) rise = m - 2 + 2 * (-prev) / (a - prev);
+      if (prev >= 0 && a < 0) set = m - 2 + 2 * prev / (prev - a);
+    }
+    if (a > maxAlt) { maxAlt = a; noon = m; }
+    prev = a;
+  }
+  dayEvCache.key = key; dayEvCache.v = { rise, set, noon, maxAlt };
+  return dayEvCache.v;
+}
+
+/* ------------------------------------------------------------ Géométrie */
+function pxPerM() {
+  if (S.scale && S.scale.meters > 0) { const d = dist(S.scale.p1, S.scale.p2); if (d > 0) return d / S.scale.meters; }
+  return 10;
+}
+const scaleOk = () => !!(S.scale && S.scale.meters > 0 && dist(S.scale.p1, S.scale.p2) > 0);
+function northVecs() { const t = S.north * D2R; return { N: { x: Math.sin(t), y: -Math.cos(t) }, E: { x: Math.cos(t), y: Math.sin(t) } }; }
+/** Vecteur (px image) du décalage de l'ombre du sommet d'un objet de hauteur hM. */
+function shadowOffset(sun, hM) {
+  if (!sun || sun.alt <= 0.05 || hM <= 0) return null;
+  const L = Math.min(hM / Math.tan(sun.alt * D2R) * pxPerM(), 2e5);
+  const { N, E } = northVecs(), a = sun.az * D2R;
+  const sx = N.x * Math.cos(a) + E.x * Math.sin(a), sy = N.y * Math.cos(a) + E.y * Math.sin(a);
+  return { x: -sx * L, y: -sy * L, L };
+}
+function localToWorld(b, lx, ly) { const c = Math.cos(b.a), s = Math.sin(b.a); return { x: b.cx + lx * c - ly * s, y: b.cy + lx * s + ly * c }; }
+function worldToLocal(b, x, y) { const c = Math.cos(b.a), s = Math.sin(b.a), dx = x - b.cx, dy = y - b.cy; return { x: dx * c + dy * s, y: -dx * s + dy * c }; }
+function corners(b) { return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => localToWorld(b, u * b.w / 2, v * b.l / 2)); }
+function hull(pts) {
+  pts = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return pts;
+  const cr = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lo = [], up = [];
+  for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  up.pop(); lo.pop(); return lo.concat(up);
+}
+function shadowPoly(b, off) { const c = corners(b); return hull(c.concat(c.map(p => ({ x: p.x + off.x, y: p.y + off.y })))); }
+
+/* ------------------------------------------- Analyse de l'image (bleu / rouge) */
+function largestComponent(mask, W, H) {
+  const lab = new Int32Array(W * H); let cur = 0, best = 0, bestN = 0; const st = [];
+  for (let i = 0; i < W * H; i++) {
+    if (!mask[i] || lab[i]) continue;
+    cur++; let n = 0; lab[i] = cur; st.push(i);
+    while (st.length) {
+      const j = st.pop(); n++;
+      const x = j % W, y = (j - x) / W;
+      for (let dy = -1; dy <= 1; dy++) {
+        const ny = y + dy; if (ny < 0 || ny >= H) continue;
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx; if (nx < 0 || nx >= W) continue;
+          const k = ny * W + nx;
+          if (mask[k] && !lab[k]) { lab[k] = cur; st.push(k); }
+        }
+      }
+    }
+    if (n > bestN) { bestN = n; best = cur; }
+  }
+  if (!best) return null;
+  const out = new Int32Array(bestN); let q = 0;
+  for (let i = 0; i < W * H; i++) if (lab[i] === best) out[q++] = i;
+  return out;
+}
+function minAreaRect(idx, W) {
+  const rows = new Map();
+  for (const i of idx) {
+    const x = i % W, y = (i - x) / W, r = rows.get(y);
+    if (!r) rows.set(y, [x, x]); else { if (x < r[0]) r[0] = x; if (x > r[1]) r[1] = x; }
+  }
+  const pts = [];
+  for (const [y, [a, b]] of rows) pts.push({ x: a, y }, { x: a, y: y + 1 }, { x: b + 1, y }, { x: b + 1, y: y + 1 });
+  const h = hull(pts);
+  let best = null;
+  for (let i = 0; i < h.length; i++) {
+    const p = h[i], q = h[(i + 1) % h.length];
+    const len = Math.hypot(q.x - p.x, q.y - p.y); if (len < 1e-9) continue;
+    const ux = (q.x - p.x) / len, uy = (q.y - p.y) / len;
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+    for (const r of h) { const a = r.x * ux + r.y * uy, b = -r.x * uy + r.y * ux; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+    const area = (a1 - a0) * (b1 - b0);
+    if (!best || area < best.area) best = { area, ux, uy, a0, a1, b0, b1 };
+  }
+  const { ux, uy, a0, a1, b0, b1 } = best;
+  const ca = (a0 + a1) / 2, cb = (b0 + b1) / 2;
+  let r = { cx: ca * ux - cb * uy, cy: ca * uy + cb * ux, w: a1 - a0, l: b1 - b0, a: Math.atan2(uy, ux) };
+  while (r.a > Math.PI / 4 + 1e-9) { r.a -= Math.PI / 2; [r.w, r.l] = [r.l, r.w]; }
+  while (r.a <= -Math.PI / 4) { r.a += Math.PI / 2; [r.w, r.l] = [r.l, r.w]; }
+  // les coins des pixels débordent d'un rectangle incliné : correction mesurée (nulle à 0°)
+  const ex = Math.min(1, Math.abs(r.a) * R2D / 2) * (1.1 + 0.35 * Math.abs(Math.sin(2 * r.a)));
+  r.w = Math.max(1, r.w - ex); r.l = Math.max(1, r.l - ex);
+  return r;
+}
+function analyzeImage(canvas) {
+  const W = canvas.width, H = canvas.height;
+  const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const blue = new Uint8Array(W * H), red = new Uint8Array(W * H);
+  for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+    const r = d[p], g = d[p + 1], b = d[p + 2];
+    if (d[p + 3] < 64) continue;
+    if (b > 100 && b - r > 50 && b - g > 30) blue[i] = 1;
+    else if (r > 120 && r - g > 60 && r - b > 60) red[i] = 1;
+  }
+  const res = {};
+  const bc = largestComponent(blue, W, H);
+  if (bc && bc.length >= 40) {
+    // géométrie : seuls les pixels couverts à plus de 50 % (évite l'élargissement dû à l'anticrénelage)
+    let dmax = 0; for (const i of bc) dmax = Math.max(dmax, d[i * 4 + 2] - Math.max(d[i * 4], d[i * 4 + 1]));
+    const strong = bc.filter(i => d[i * 4 + 2] - Math.max(d[i * 4], d[i * 4 + 1]) >= dmax * 0.5);
+    const rect = minAreaRect(strong.length >= 20 ? strong : bc, W);
+    let sr = 0, sg = 0, sb = 0;
+    for (const i of bc) { sr += d[i * 4]; sg += d[i * 4 + 1]; sb += d[i * 4 + 2]; }
+    const n = bc.length, filled = n / (rect.w * rect.l) > 0.55;
+    res.blue = { idx: bc, rect, style: { color: `rgb(${Math.round(sr / n)},${Math.round(sg / n)},${Math.round(sb / n)})`, filled, thick: filled ? 0 : clamp(n / (2 * (rect.w + rect.l)), 1, 30) } };
+  }
+  const rc = largestComponent(red, W, H);
+  if (rc && rc.length >= 10) {
+    let mx = 0, my = 0;
+    for (const i of rc) { mx += i % W + 0.5; my += Math.floor(i / W) + 0.5; }
+    mx /= rc.length; my /= rc.length;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const i of rc) { const x = i % W + 0.5 - mx, y = Math.floor(i / W) + 0.5 - my; sxx += x * x; sxy += x * y; syy += y * y; }
+    const t = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(t), uy = Math.sin(t);
+    let a0 = Infinity, a1 = -Infinity;
+    for (const i of rc) { const a = (i % W + 0.5 - mx) * ux + (Math.floor(i / W) + 0.5 - my) * uy; a0 = Math.min(a0, a); a1 = Math.max(a1, a); }
+    a0 -= 0.5; a1 += 0.5;
+    if (a1 - a0 >= 15) res.red = { p1: { x: mx + ux * a0, y: my + uy * a0 }, p2: { x: mx + ux * a1, y: my + uy * a1 } };
+  }
+  return res;
+}
+/** Efface le rectangle bleu d'origine en le « rebouchant » avec les pixels voisins. */
+function inpaint(canvas, idx, dil = 2) {
+  const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const img = ctx.getImageData(0, 0, W, H), d = img.data;
+  const mask = new Uint8Array(W * H); let list = Array.from(idx);
+  for (const i of list) mask[i] = 1;
+  const nb = (j, f) => {
+    const x = j % W, y = (j - x) / W;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue; const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < W && ny < H) f(ny * W + nx);
+    }
+  };
+  for (let k = 0; k < dil; k++) { const add = []; for (const j of list) nb(j, n => { if (!mask[n]) { mask[n] = 1; add.push(n); } }); list = list.concat(add); }
+  const mark = new Uint8Array(W * H);
+  let front = list.filter(j => { let ok = false; nb(j, n => { if (!mask[n]) ok = true; }); return ok; });
+  for (const j of front) mark[j] = 1;
+  while (front.length) {
+    const vals = new Float32Array(front.length * 3);
+    front.forEach((j, q) => {
+      let r = 0, g = 0, b = 0, c = 0;
+      nb(j, n => { if (!mask[n]) { r += d[n * 4]; g += d[n * 4 + 1]; b += d[n * 4 + 2]; c++; } });
+      if (c) { vals[q * 3] = r / c; vals[q * 3 + 1] = g / c; vals[q * 3 + 2] = b / c; } else { vals[q * 3] = vals[q * 3 + 1] = vals[q * 3 + 2] = 255; }
+    });
+    const next = [];
+    front.forEach((j, q) => { d[j * 4] = vals[q * 3]; d[j * 4 + 1] = vals[q * 3 + 1]; d[j * 4 + 2] = vals[q * 3 + 2]; d[j * 4 + 3] = 255; mask[j] = 0; });
+    for (const j of front) nb(j, n => { if (mask[n] && !mark[n]) { mark[n] = 1; next.push(n); } });
+    front = next;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ------------------------------------------------------- Chargement */
+const scriptCache = {};
+function loadScript(src) {
+  return scriptCache[src] || (scriptCache[src] = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = src; s.onload = res;
+    s.onerror = () => { delete scriptCache[src]; rej(new Error('Impossible de charger ' + src + ' (connexion Internet ?)')); };
+    document.head.appendChild(s);
+  }));
+}
+const readAs = (file, how) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r[how](file); });
+const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Image illisible')); i.src = src; });
+function cloneCanvas(c) { const o = document.createElement('canvas'); o.width = c.width; o.height = c.height; o.getContext('2d').drawImage(c, 0, 0); return o; }
+function imgToCanvas(img) {
+  const c = document.createElement('canvas'); c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0); return c;
+}
+async function renderPdf(file) {
+  const base = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  await loadScript(base + 'pdf.min.js');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = base + 'pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await readAs(file, 'readAsArrayBuffer')) }).promise;
+  const page = await pdf.getPage(1);
+  const v0 = page.getViewport({ scale: 1 });
+  const vp = page.getViewport({ scale: clamp(3500 / Math.max(v0.width, v0.height), 1, 5) });
+  const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: x, viewport: vp }).promise;
+  return c;
+}
+async function openFile(file) {
+  try {
+    const n = file.name.toLowerCase();
+    status('Chargement de « ' + file.name + ' »…', true);
+    if (n.endsWith('.json') || file.type === 'application/json') return await loadProject(JSON.parse(await readAs(file, 'readAsText')));
+    if (n.endsWith('.pdf') || file.type === 'application/pdf') {
+      const c = await renderPdf(file);
+      return setImage(c, c.toDataURL('image/png'), file.name.replace(/\.pdf$/i, ''));
+    }
+    const url = await readAs(file, 'readAsDataURL');
+    setImage(imgToCanvas(await loadImg(url)), url, file.name.replace(/\.[^.]+$/, ''));
+  } catch (e) { console.error(e); status('Erreur : ' + e.message, true); alert('Impossible d\'ouvrir ce fichier.\n' + e.message); }
+}
+function setImage(canvas, dataURL, name, keep) {
+  S.orig = canvas; S.origDataURL = dataURL; S.fileName = name || 'plan';
+  const an = analyzeImage(canvas);
+  S.clean = cloneCanvas(canvas);
+  S.origRect = null; S.origStyle = null;
+  if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = an.blue.rect; S.origStyle = an.blue.style; }
+  const msgs = [];
+  if (!keep) {
+    S.building = S.origRect ? { ...S.origRect } : null;
+    S.traj = [];
+    S.scale = an.red ? { p1: an.red.p1, p2: an.red.p2, meters: 0 } : null;
+    msgs.push(an.blue ? 'Immeuble (rectangle bleu) détecté.' : 'Aucun rectangle bleu détecté : utilisez « Dessiner un immeuble ».');
+    msgs.push(an.red ? 'Segment rouge détecté (' + fmtNum(dist(an.red.p1, an.red.p2), 0) + ' px) : indiquez sa longueur réelle.' : 'Aucun segment rouge : utilisez « Tracer l\'échelle ».');
+  }
+  fitView(); changed();
+  if (msgs.length) status(msgs.join(' '), true);
+  if (!keep && an.red) { $('iScale').focus(); ocrScale(true); }
+}
+
+/* ------------------------------------------------- Lecture de l'échelle (OCR) */
+async function ocrScale(auto) {
+  if (!S.scale || !S.orig) { if (!auto) alert('Aucun segment d\'échelle sur le plan.'); return; }
+  const { p1, p2 } = S.scale, len = dist(p1, p2), img = S.orig;
+  const mx = Math.max(20, 0.35 * len), my = Math.max(45, 0.45 * len);
+  const x0 = clamp(Math.floor(Math.min(p1.x, p2.x) - mx), 0, img.width), x1 = clamp(Math.ceil(Math.max(p1.x, p2.x) + mx), 0, img.width);
+  const y0 = clamp(Math.floor(Math.min(p1.y, p2.y) - my), 0, img.height), y1 = clamp(Math.ceil(Math.max(p1.y, p2.y) + my), 0, img.height);
+  if (x1 - x0 < 5 || y1 - y0 < 5) return;
+  const k = clamp(300 / (y1 - y0), 1, 4);
+  const c = document.createElement('canvas'); c.width = Math.round((x1 - x0) * k); c.height = Math.round((y1 - y0) * k);
+  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+  const id = ctx.getImageData(0, 0, c.width, c.height), d = id.data;
+  for (let p = 0; p < d.length; p += 4) {
+    const r = d[p], g = d[p + 1], b = d[p + 2];
+    const v = (r > 120 && r - g > 60 && r - b > 60) ? 255 : (0.3 * r + 0.59 * g + 0.11 * b);
+    d[p] = d[p + 1] = d[p + 2] = v;
+  }
+  ctx.putImageData(id, 0, 0);
+  try {
+    status('Lecture de la longueur écrite près du segment rouge…', true);
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
+    const { data } = await Tesseract.recognize(c, 'eng');
+    const text = (data.text || '').replace(/[Oo](?=\s*m\b)/g, '0');
+    let val = null, m;
+    if ((m = text.match(/(\d+(?:[.,]\d+)?)\s*(km|m)\b/i))) val = parseNum(m[1]) * (m[2].toLowerCase() === 'km' ? 1000 : 1);
+    else if ((m = text.match(/\d+(?:[.,]\d+)?/))) val = parseNum(m[0]);
+    if (val > 0 && val < 1e5) {
+      if (S.scale.meters > 0 && auto) return;
+      S.scale.meters = val; changed();
+      status('Longueur lue sur le plan : ' + fmtNum(val, val % 1 ? 1 : 0) + ' m — vérifiez-la (champ « Longueur réelle »).', true);
+    } else {
+      status('Aucun nombre lisible près du segment rouge : saisissez la longueur à la main.', true);
+    }
+  } catch (e) {
+    console.warn(e);
+    status('Lecture automatique impossible (' + e.message + ') : saisissez la longueur du segment rouge.', true);
+  }
+}
+
+/* ------------------------------------------------------- Plan de démo */
+function makeDemo() {
+  const W = 1600, H = 1100, c = document.createElement('canvas'); c.width = W; c.height = H;
+  const x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.strokeStyle = '#222'; x.lineWidth = 1.5;
+  // voies
+  x.fillStyle = '#f2f2f2';
+  x.fillRect(0, 520, W, 70); x.fillRect(760, 0, 60, H);
+  x.strokeRect(-2, 520, W + 4, 70); x.strokeRect(760, -2, 60, H + 4);
+  x.fillStyle = '#555'; x.font = 'italic 22px serif';
+  x.fillText('Avenue des Platanes', 200, 562); x.save(); x.translate(797, 900); x.rotate(-Math.PI / 2); x.fillText('Rue du Moulin', 0, 0); x.restore();
+  // parcelles
+  const parcels = [[40, 40, 340, 230], [380, 40, 360, 230], [40, 270, 340, 230], [380, 270, 360, 230], [840, 40, 360, 220], [1200, 40, 360, 220],
+    [840, 260, 720, 240], [40, 610, 260, 450], [300, 610, 440, 450], [840, 610, 380, 220], [1220, 610, 340, 220], [840, 830, 720, 230]];
+  x.font = '15px sans-serif';
+  parcels.forEach(([a, b, w, h], i) => { x.strokeRect(a, b, w, h); x.fillStyle = '#333'; x.fillText(String(120 + i), a + w / 2 - 12, b + h / 2 + 5); });
+  // bâtiments existants (hachures)
+  const blds = [[70, 70, 180, 110], [430, 90, 150, 140], [90, 320, 120, 150], [880, 80, 140, 120], [1260, 70, 160, 140], [900, 300, 260, 120],
+    [330, 660, 160, 120], [890, 650, 150, 140], [1280, 650, 200, 120], [900, 880, 220, 130]];
+  for (const [a, b, w, h] of blds) {
+    x.save(); x.beginPath(); x.rect(a, b, w, h); x.clip();
+    x.fillStyle = '#f3dede'; x.fill(); x.strokeStyle = '#b77'; x.lineWidth = 1;
+    for (let k = -h; k < w; k += 9) { x.beginPath(); x.moveTo(a + k, b + h); x.lineTo(a + k + h, b); x.stroke(); }
+    x.restore(); x.strokeStyle = '#222'; x.lineWidth = 1.5; x.strokeRect(a, b, w, h);
+  }
+  // projet : rectangle bleu
+  x.save(); x.translate(560, 820); x.rotate(-12 * D2R); x.strokeStyle = '#0000ff'; x.lineWidth = 4; x.strokeRect(-110, -60, 220, 120); x.restore();
+  // échelle : segment rouge de 20 m = 200 px
+  x.strokeStyle = '#e00000'; x.lineWidth = 4; x.beginPath(); x.moveTo(1300, 1060); x.lineTo(1500, 1060); x.stroke();
+  x.fillStyle = '#000'; x.font = 'bold 26px sans-serif'; x.fillText('20 m', 1370, 1045);
+  // flèche nord
+  x.beginPath(); x.moveTo(1540, 120); x.lineTo(1525, 160); x.lineTo(1555, 160); x.closePath(); x.fill(); x.font = 'bold 20px sans-serif'; x.fillText('N', 1533, 112);
+  return c;
+}
+
+/* ------------------------------------------------------------- Rendu */
+const cv = $('cv'), cctx = cv.getContext('2d');
+let CW = 0, CH = 0, DPR = 1;
+function resizeCanvas() {
+  const r = $('stage').getBoundingClientRect(); DPR = window.devicePixelRatio || 1;
+  CW = Math.max(10, r.width); CH = Math.max(10, r.height);
+  cv.width = Math.round(CW * DPR); cv.height = Math.round(CH * DPR); S.dirty = true;
+}
+function fitView() {
+  if (!S.clean) return;
+  const s = Math.min(CW / S.clean.width, CH / S.clean.height) * 0.96;
+  V.s = s; V.ox = (CW - S.clean.width * s) / 2; V.oy = (CH - S.clean.height * s) / 2; S.dirty = true;
+}
+const toS = (p, v = V) => ({ x: v.ox + p.x * v.s, y: v.oy + p.y * v.s });
+const toW = (p, v = V) => ({ x: (p.x - v.ox) / v.s, y: (p.y - v.oy) / v.s });
+function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
+function polyPath(ctx, pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
+
+class Placer {
+  constructor(W, H) { this.W = W; this.H = H; this.rects = []; }
+  add(r) { this.rects.push(r); }
+  free(r) {
+    if (r.x < 2 || r.y < 2 || r.x + r.w > this.W - 2 || r.y + r.h > this.H - 2) return false;
+    for (const o of this.rects) if (r.x < o.x + o.w + 3 && r.x + r.w + 3 > o.x && r.y < o.y + o.h + 3 && r.y + r.h + 3 > o.y) return false;
+    return true;
+  }
+  place(ax, ay, w, h, dir = 0) {
+    const radii = [5, 14, 26, 40, 56, 76, 100, 130, 165, 210, 260, 320];
+    let first = null;
+    for (const r of radii) {
+      const n = Math.max(8, Math.round(r / 5));
+      for (let i = 0; i < n; i++) {
+        const t = dir + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 2 * Math.PI / n;
+        const ct = Math.cos(t), st = Math.sin(t), ext = Math.abs(ct) * w / 2 + Math.abs(st) * h / 2;
+        const rc = { x: ax + ct * (r + ext) - w / 2, y: ay + st * (r + ext) - h / 2, w, h };
+        if (!first) first = rc;
+        if (this.free(rc)) { this.add(rc); return rc; }
+      }
+    }
+    this.add(first); return first;
+  }
+}
+function drawLabel(ctx, rc, text, col, anchor) {
+  if (anchor) {
+    const nx = clamp(anchor.x, rc.x, rc.x + rc.w), ny = clamp(anchor.y, rc.y, rc.y + rc.h);
+    if (Math.hypot(nx - anchor.x, ny - anchor.y) > 8) {
+      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(anchor.x, anchor.y); ctx.lineTo(nx, ny); ctx.stroke();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 2.5, 0, 7); ctx.fill();
+    }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.roundRect(rc.x, rc.y, rc.w, rc.h, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#111'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  ctx.fillText(text, rc.x + rc.w / 2, rc.y + rc.h / 2 + 0.5);
+}
+function curSun() { return sunFor(S.dDay, mod(S.dMin, 1440), S.dOff); }
+function niceLen(m) { const p = 10 ** Math.floor(Math.log10(m)), f = m / p; return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p; }
+
+function render(ctx, W, H, v, opt = {}) {
+  const k = opt.k || 1, print = !!opt.print;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  ctx.fillStyle = print ? '#fff' : '#d9dce1'; ctx.fillRect(0, 0, W, H);
+  if (!S.clean) {
+    ctx.fillStyle = '#556'; ctx.textAlign = 'center'; ctx.font = '16px system-ui, sans-serif';
+    ctx.fillText('Ouvrez un plan cadastral (bouton « Ouvrir… » ou glisser-déposer un fichier ici)', W / 2, H / 2 - 12);
+    ctx.fillText('ou essayez le « Plan de démonstration ».', W / 2, H / 2 + 14);
+    return;
+  }
+  const b = S.building, ppm = pxPerM(), hM = S.dH, sun = curSun(), px = 1 / v.s;
+  ctx.save(); ctx.setTransform(k * v.s, 0, 0, k * v.s, k * v.ox, k * v.oy);
+  ctx.imageSmoothingEnabled = v.s < 3;
+  ctx.drawImage(S.clean, 0, 0);
+  if (S.showOrig && S.origRect && b && (Math.abs(b.cx - S.origRect.cx) + Math.abs(b.cy - S.origRect.cy) + Math.abs(b.w - S.origRect.w) + Math.abs(b.l - S.origRect.l) + Math.abs(b.a - S.origRect.a) * 100 > 0.5)) {
+    polyPath(ctx, corners(S.origRect)); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = 'rgba(30,60,200,0.6)'; ctx.lineWidth = 1.5 * px; ctx.stroke(); ctx.setLineDash([]);
+  }
+  const scen = [];
+  if (b) {
+    if (S.showScenario) S.scenario.forEach((e, i) => {
+      const off = offsetFor(e.day, e.minute, e.utc), s = sunFor(e.day, e.minute, off), so = shadowOffset(s, hM), col = SC_COLORS[i % SC_COLORS.length];
+      if (so) { polyPath(ctx, shadowPoly(b, so)); ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
+      scen.push({ e, so, col });
+    });
+    if (!S.showScenario || !S.scenario.length || S.showCurrent) {
+      const so = shadowOffset(sun, hM);
+      if (so) { polyPath(ctx, shadowPoly(b, so)); ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
+    }
+    polyPath(ctx, corners(b)); ctx.fillStyle = 'rgba(37,99,235,0.82)'; ctx.fill(); ctx.strokeStyle = '#0b2fa8'; ctx.lineWidth = 2 * px; ctx.stroke();
+  }
+  ctx.restore();
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+
+  const P = new Placer(W, H);
+  P.add({ x: W - 96, y: 0, w: 96, h: 116 });     // rose des vents
+  P.add({ x: 0, y: H - 46, w: 210, h: 46 });     // échelle graphique
+  let bS = null;
+  if (b) {
+    bS = corners(b).map(p => toS(p, v));
+    const xs = bS.map(p => p.x), ys = bS.map(p => p.y);
+    P.add({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) });
+  }
+
+  // segment d'échelle
+  if (S.scale) {
+    const a = toS(S.scale.p1, v), c = toS(S.scale.p2, v);
+    ctx.strokeStyle = '#e00000'; ctx.lineWidth = 2;
+    for (const p of [a, c]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.stroke(); }
+    if (!print || !scaleOk()) {
+      ctx.font = '12px system-ui, sans-serif';
+      const t = scaleOk() ? fmtNum(S.scale.meters, S.scale.meters % 1 ? 1 : 0) + ' m' : 'longueur ?';
+      const w = ctx.measureText(t).width + 12;
+      drawLabel(ctx, P.place((a.x + c.x) / 2, (a.y + c.y) / 2, w, 18, Math.PI / 2), t, '#e00000', null);
+    }
+  }
+
+  // trajectoires
+  if (b) S.traj.forEach((t, ti) => {
+    const col = TR_COLORS[ti % TR_COLORS.length];
+    const Pw = localToWorld(b, t.u * b.w, t.v * b.l);
+    const day = S.dDay, segs = []; let seg = [];
+    const ticks = [];
+    for (let m = 0; m <= 1440; m += 3) {
+      const s = sunFor(day, m, offsetFor(Math.round(day), m, S.utcMode));
+      const so = s.alt > 0.6 ? shadowOffset(s, hM) : null;
+      if (so) {
+        const q = toS({ x: Pw.x + so.x, y: Pw.y + so.y }, v);
+        if (Math.abs(q.x) < 2e4 && Math.abs(q.y) < 2e4) { seg.push(q); if (m % 60 === 0 && s.alt > 1.5) ticks.push({ q, h: m / 60, prev: seg[seg.length - 2] }); continue; }
+      }
+      if (seg.length > 1) segs.push(seg); seg = [];
+    }
+    if (seg.length > 1) segs.push(seg);
+    ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.lineJoin = 'round';
+    for (const sg of segs) { ctx.beginPath(); sg.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); }
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    for (const tk of ticks) {
+      if (tk.q.x < -20 || tk.q.y < -20 || tk.q.x > W + 20 || tk.q.y > H + 20) continue;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(tk.q.x, tk.q.y, 3.5, 0, 7); ctx.fill(); ctx.stroke();
+      tk.dir = tk.prev ? Math.atan2(tk.q.y - tk.prev.y, tk.q.x - tk.prev.x) + Math.PI / 2 : -Math.PI / 2;
+    }
+    t._ticks = ticks;
+    const ps = toS(Pw, v);
+    ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ps.x, ps.y, 5, 0, 7); ctx.fill(); ctx.stroke();
+    const so = shadowOffset(sun, hM);
+    if (so) {
+      const q = toS({ x: Pw.x + so.x, y: Pw.y + so.y }, v);
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = hexA(col, 0.7); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(ps.x, ps.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 6, 0, 7); ctx.fill(); ctx.stroke();
+    }
+  });
+
+  // cotes de l'immeuble
+  if (b && S.showDims && bS) {
+    ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const cS = toS({ x: b.cx, y: b.cy }, v), inside = Math.min(b.w, b.l) * v.s > 70;
+    const edgeLabel = (p, q, txt) => {
+      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2; let ang = Math.atan2(q.y - p.y, q.x - p.x);
+      let nx = mx - cS.x, ny = my - cS.y; const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+      if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+      const o = inside ? -13 : 14;   // à l'intérieur si l'immeuble est assez grand (évite les poignées)
+      ctx.save(); ctx.translate(mx + nx * o, my + ny * o); ctx.rotate(ang);
+      if (inside) { ctx.fillStyle = '#fff'; ctx.fillText(txt, 0, 0); } else { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = '#0b2fa8'; ctx.fillText(txt, 0, 0); }
+      ctx.restore();
+    };
+    edgeLabel(bS[0], bS[1], fmtNum(b.w / ppm) + ' m');
+    edgeLabel(bS[3], bS[0], fmtNum(b.l / ppm) + ' m');
+    if (Math.min(b.w, b.l) * v.s > 34) { ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.fillText('H ' + fmtNum(hM, hM % 1 ? 1 : 0) + ' m', cS.x, cS.y); }
+  }
+
+  // poignées
+  if (b && !print && S.mode === 'select') {
+    const hs = handles();
+    ctx.strokeStyle = '#0b2fa8'; ctx.lineWidth = 1.5;
+    const top = hs.find(h => h.kind === 'rot');
+    const tm = hs.find(h => h.kind === 'size' && h.hx === 0 && h.hy === -1);
+    ctx.beginPath(); ctx.moveTo(tm.x, tm.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+    for (const h of hs) {
+      ctx.fillStyle = '#fff';
+      if (h.kind === 'rot') { ctx.beginPath(); ctx.arc(h.x, h.y, 6.5, 0, 7); ctx.fill(); ctx.stroke(); }
+      else { ctx.fillRect(h.x - 4.5, h.y - 4.5, 9, 9); ctx.strokeRect(h.x - 4.5, h.y - 4.5, 9, 9); }
+    }
+  }
+
+  // étiquettes du scénario
+  ctx.font = '12px system-ui, sans-serif';
+  if (b) for (const s of scen) {
+    const txt = fmtDate(s.e.day, true) + ' ' + fmtTime(s.e.minute) + (s.e.utc ? ' TU' : '') + (s.so ? '' : ' — nuit');
+    const w = ctx.measureText(txt).width + 14;
+    let a, dir;
+    if (s.so) {
+      const tip = toS({ x: b.cx + s.so.x, y: b.cy + s.so.y }, v);
+      dir = Math.atan2(s.so.y, s.so.x);
+      a = { x: clamp(tip.x, 12, W - 12), y: clamp(tip.y, 12, H - 12) };
+    } else { a = toS({ x: b.cx, y: b.cy }, v); dir = Math.PI / 2; }
+    drawLabel(ctx, P.place(a.x, a.y, w, 19, dir), txt, s.col, a);
+  }
+  // heures des trajectoires
+  ctx.font = 'bold 11px system-ui, sans-serif';
+  if (b) S.traj.forEach((t, ti) => {
+    const col = TR_COLORS[ti % TR_COLORS.length];
+    for (const tk of t._ticks || []) {
+      if (tk.q.x < 0 || tk.q.y < 0 || tk.q.x > W || tk.q.y > H) continue;
+      const txt = tk.h + ' h', w = ctx.measureText(txt).width + 8;
+      drawLabel(ctx, P.place(tk.q.x, tk.q.y, w, 16, tk.dir), txt, col, tk.q);
+    }
+  });
+
+  // rose des vents + soleil
+  {
+    const cx = W - 50, cy = 52, R = 34, { N, E } = northVecs();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = '#99a'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#c00';
+    ctx.beginPath(); ctx.moveTo(cx + N.x * (R - 6), cy + N.y * (R - 6)); ctx.lineTo(cx + E.x * 6, cy + E.y * 6); ctx.lineTo(cx - E.x * 6, cy - E.y * 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.beginPath(); ctx.moveTo(cx - N.x * (R - 6), cy - N.y * (R - 6)); ctx.lineTo(cx + E.x * 6, cy + E.y * 6); ctx.lineTo(cx - E.x * 6, cy - E.y * 6); ctx.closePath(); ctx.fill();
+    ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c00';
+    ctx.fillText('N', cx + N.x * (R + 9), cy + N.y * (R + 9));
+    if (sun.alt > 0) {
+      const a = sun.az * D2R, dx = N.x * Math.cos(a) + E.x * Math.sin(a), dy = N.y * Math.cos(a) + E.y * Math.sin(a);
+      const r = R * (1 - sun.alt / 90) * 0.92 + 2;
+      ctx.fillStyle = '#f5b301'; ctx.strokeStyle = '#a66f00'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx + dx * r, cy + dy * r, 6, 0, 7); ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx - 4, cy + R + 22);
+  }
+  // échelle graphique
+  {
+    const mPerPx = 1 / (ppm * v.s), L = niceLen(140 * mPerPx), w = L / mPerPx, x0 = 14, y0 = H - 22;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(x0 - 8, y0 - 18, w + 70, 30);
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#222'; ctx.fillRect(x0 + i * w / 4, y0, w / 4, 6); }
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, w, 6);
+    ctx.fillStyle = '#222'; ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('0', x0 - 3, y0 - 4); ctx.fillText(fmtNum(L, L < 1 ? 1 : 0) + ' m' + (scaleOk() ? '' : ' (échelle non définie !)'), x0 + w - 6, y0 - 4);
+  }
+  // en-tête (impression / export)
+  if (print) {
+    const txt = fmtDate(S.day) + ' — ' + fmtTime(S.minute) + (S.utcMode ? ' TU' : ' (heure locale)') + ' — hauteur ' + fmtNum(S.height) + ' m';
+    ctx.font = 'bold 13px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    const w = ctx.measureText(txt).width + 14;
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.fillRect(6, 6, w, 22); ctx.fillStyle = '#111'; ctx.fillText(txt, 13, 11);
+  }
+  // tracés temporaires
+  if (S.temp) {
+    ctx.strokeStyle = S.temp.type === 'scale' ? '#e00000' : '#0b2fa8'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    const a = toS(S.temp.p1, v), c = toS(S.temp.p2, v);
+    if (S.temp.type === 'scale') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
+    else ctx.strokeRect(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y));
+    ctx.setLineDash([]);
+  }
+}
+function draw() { render(cctx, CW, CH, V, { k: DPR }); }
+
+/* ------------------------------------------------------- Interaction plan */
+function handles(v = V) {
+  const b = S.building, out = [];
+  for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) {
+    if (!hx && !hy) continue;
+    out.push({ kind: 'size', hx, hy, ...toS(localToWorld(b, hx * b.w / 2, hy * b.l / 2), v) });
+  }
+  const tm = toS(localToWorld(b, 0, -b.l / 2), v);
+  out.push({ kind: 'rot', x: tm.x + Math.sin(b.a) * 28, y: tm.y - Math.cos(b.a) * 28 });
+  return out;
+}
+function hitTest(p) {
+  const b = S.building; if (!b) return null;
+  if (S.mode === 'select') {
+    const hs = handles();
+    const r = hs.find(h => h.kind === 'rot' && Math.hypot(h.x - p.x, h.y - p.y) < 10); if (r) return r;
+    let best = null, bd = 9;
+    for (const h of hs) if (h.kind === 'size') { const d = Math.hypot(h.x - p.x, h.y - p.y); if (d < bd) { bd = d; best = h; } }
+    if (best) return best;
+  }
+  const w = toW(p), l = worldToLocal(b, w.x, w.y);
+  if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'move' };
+  return null;
+}
+function cursorFor(h) {
+  if (!h) return S.mode === 'select' ? 'default' : 'crosshair';
+  if (h.kind === 'move') return S.mode === 'traj' ? 'crosshair' : 'move';
+  if (h.kind === 'rot') return 'grab';
+  const c = toS({ x: S.building.cx, y: S.building.cy });
+  const a = mod(Math.atan2(h.y - c.y, h.x - c.x) * R2D, 180);
+  return a < 22.5 || a >= 157.5 ? 'ew-resize' : a < 67.5 ? 'nwse-resize' : a < 112.5 ? 'ns-resize' : 'nesw-resize';
+}
+let drag = null;
+const evPos = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  if (!S.clean) return;
+  cv.setPointerCapture(e.pointerId);
+  const p = evPos(e), w = toW(p);
+  const pan = () => { drag = { type: 'pan', sx: p.x, sy: p.y, ox: V.ox, oy: V.oy }; cv.style.cursor = 'grabbing'; };
+  if (e.button === 1 || e.button === 2) return pan();
+  if (S.mode === 'scale') {
+    if (!S.temp) S.temp = { type: 'scale', p1: w, p2: w };
+    else { S.temp.p2 = w; finishScale(); }
+    S.dirty = true; return;
+  }
+  if (S.mode === 'draw') { S.temp = { type: 'draw', p1: w, p2: w }; drag = { type: 'draw' }; return; }
+  if (S.mode === 'traj') {
+    const b = S.building;
+    if (b) {
+      const cs = corners(b).map(c => toS(c));
+      const ci = cs.findIndex(c => Math.hypot(c.x - p.x, c.y - p.y) < 14);
+      let u, v;
+      if (ci >= 0) { u = [-0.5, 0.5, 0.5, -0.5][ci]; v = [-0.5, -0.5, 0.5, 0.5][ci]; }
+      else { const l = worldToLocal(b, w.x, w.y); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) { u = l.x / b.w; v = l.y / b.l; } }
+      if (u !== undefined) { S.traj.push({ u, v, corner: ci >= 0 }); changed(); status('Trajectoire ajoutée. Cliquez sur un autre point, ou Échap pour terminer.', true); return; }
+    }
+    return pan();
+  }
+  const h = hitTest(p), b = S.building;
+  if (!h) return pan();
+  if (h.kind === 'move') drag = { type: 'move', sx: w.x, sy: w.y, cx: b.cx, cy: b.cy };
+  else if (h.kind === 'rot') drag = { type: 'rot', a0: b.a, t0: Math.atan2(w.y - b.cy, w.x - b.cx) };
+  else drag = { type: 'size', hx: h.hx, hy: h.hy, F: localToWorld(b, -h.hx * b.w / 2, -h.hy * b.l / 2) };
+});
+cv.addEventListener('pointermove', e => {
+  const p = evPos(e), w = toW(p);
+  if (S.temp && !drag && S.mode === 'scale') { S.temp.p2 = w; S.dirty = true; }
+  if (!drag) { if (S.clean) cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? cursorFor(hitTest(p)) : 'crosshair'; return; }
+  const b = S.building;
+  switch (drag.type) {
+    case 'pan': V.ox = drag.ox + p.x - drag.sx; V.oy = drag.oy + p.y - drag.sy; break;
+    case 'draw': S.temp.p2 = w; break;
+    case 'move': b.cx = drag.cx + w.x - drag.sx; b.cy = drag.cy + w.y - drag.sy; break;
+    case 'rot': {
+      let a = drag.a0 + Math.atan2(w.y - b.cy, w.x - b.cx) - drag.t0;
+      if (e.shiftKey) a = Math.round(a / (15 * D2R)) * 15 * D2R;
+      b.a = Math.atan2(Math.sin(a), Math.cos(a)); break;
+    }
+    case 'size': {
+      const { hx, hy, F } = drag, c = Math.cos(b.a), s = Math.sin(b.a);
+      const dx = w.x - F.x, dy = w.y - F.y, lx = dx * c + dy * s, ly = -dx * s + dy * c;
+      if (hx) b.w = Math.max(2, lx * hx);
+      if (hy) b.l = Math.max(2, ly * hy);
+      const ox = hx ? hx * b.w / 2 : 0, oy = hy ? hy * b.l / 2 : 0;
+      b.cx = F.x + ox * c - oy * s; b.cy = F.y + ox * s + oy * c; break;
+    }
+  }
+  S.dirty = true; if (drag.type !== 'pan' && drag.type !== 'draw') syncUI();
+});
+cv.addEventListener('pointerup', e => {
+  if (!drag) return;
+  if (drag.type === 'draw') {
+    const { p1, p2 } = S.temp; S.temp = null;
+    if (Math.abs(p2.x - p1.x) * V.s > 5 && Math.abs(p2.y - p1.y) * V.s > 5) {
+      S.building = { cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 };
+      setMode('select');
+    }
+  }
+  drag = null; cv.style.cursor = 'default'; changed();
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); if (!S.clean) return;
+  const p = evPos(e), f = Math.exp(-normWheel(e) * 0.0015), w = toW(p);
+  V.s = clamp(V.s * f, 0.02, 40); V.ox = p.x - w.x * V.s; V.oy = p.y - w.y * V.s; S.dirty = true;
+}, { passive: false });
+function finishScale() {
+  const { p1, p2 } = S.temp; S.temp = null;
+  if (dist(p1, p2) * V.s < 5) return;
+  const v = parseNum(prompt('Longueur réelle de ce segment (en mètres) :', S.scale && S.scale.meters ? String(S.scale.meters).replace('.', ',') : ''));
+  S.scale = { p1, p2, meters: v > 0 ? v : 0 };
+  setMode('select'); changed();
+}
+function setMode(m) {
+  S.mode = m; S.temp = null;
+  $('mSelect').classList.toggle('on', m === 'select'); $('mTraj').classList.toggle('on', m === 'traj'); $('mScale').classList.toggle('on', m === 'scale');
+  $('btnTraj').classList.toggle('on', m === 'traj'); $('btnDraw').classList.toggle('on', m === 'draw'); $('btnScale').classList.toggle('on', m === 'scale');
+  status({
+    select: 'Mode sélection : glisser l\'immeuble, ses poignées, ou le fond du plan. Molette = zoom.',
+    traj: 'Mode trajectoire : cliquez sur un coin ou un point du toit de l\'immeuble.',
+    scale: 'Mode échelle : cliquez sur les deux extrémités d\'une longueur connue.',
+    draw: 'Dessin : tracez le rectangle de l\'immeuble en glissant sur le plan.'
+  }[m], true);
+  S.dirty = true;
+}
+
+/* ------------------------------------------------- Contrôles du panneau */
+function normWheel(e) { let d = e.deltaY || e.deltaX; if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 400; return d; }
+function attachScrub(el, stepFn, dragEl) {
+  let acc = 0;
+  el.addEventListener('wheel', e => {
+    e.preventDefault(); const d = normWheel(e);
+    if (Math.abs(d) >= 50) { acc = 0; stepFn(d < 0 ? 1 : -1, e); return; }   // un cran de molette = un pas
+    acc -= d; const n = Math.trunc(acc / 60); if (n) { acc -= n * 60; stepFn(clamp(n, -5, 5), e); }   // pavé tactile
+  }, { passive: false });
+  for (const t of dragEl ? [el, dragEl] : [el]) {
+    if (t.tagName === 'INPUT') continue;
+    t.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault(); t.setPointerCapture(e.pointerId);
+      let lx = e.clientX, ly = e.clientY, da = 0;
+      const mv = ev => { da += (ev.clientX - lx) - (ev.clientY - ly); lx = ev.clientX; ly = ev.clientY; const n = Math.trunc(da / 6); if (n) { da -= n * 6; stepFn(n, ev); } };
+      const up = () => { t.removeEventListener('pointermove', mv); t.removeEventListener('pointerup', up); t.removeEventListener('pointercancel', up); };
+      t.addEventListener('pointermove', mv); t.addEventListener('pointerup', up); t.addEventListener('pointercancel', up);
+    });
+  }
+}
+const numFields = [];
+function numField(id, o) {
+  const el = $(id), lbl = document.querySelector(`.drag[data-for="${id}"]`);
+  const f = { el, ...o };
+  const apply = v => { if (!isFinite(v)) return; if (o.min !== undefined) v = Math.max(o.min, v); if (o.max !== undefined) v = Math.min(o.max, v); o.set(v); changed(); };
+  attachScrub(el, (n, e) => { if (o.enabled && !o.enabled()) return; const st = e.shiftKey ? o.fine : o.step; apply(Math.round((o.get() + n * st) / st) * st); }, lbl);
+  el.addEventListener('change', () => { if (o.enabled && !o.enabled()) return; apply(parseNum(el.value)); el.blur(); });
+  el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); e.stopPropagation(); });
+  numFields.push(f);
+}
+const B = () => S.building;
+numField('iH', { get: () => S.height, set: v => S.height = v, step: 1, fine: 0.1, dec: 1, min: 0, max: 1000 });
+numField('iW', { get: () => B().w / pxPerM(), set: v => B().w = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
+numField('iL', { get: () => B().l / pxPerM(), set: v => B().l = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
+numField('iA', { get: () => B().a * R2D, set: v => B().a = mod(v + 180, 360) * D2R - Math.PI, step: 1, fine: 0.1, dec: 1, enabled: B });
+numField('iLat', { get: () => S.lat, set: v => S.lat = v, step: 0.1, fine: 0.001, dec: 4, min: -89.9, max: 89.9 });
+numField('iLon', { get: () => S.lon, set: v => S.lon = v, step: 0.1, fine: 0.001, dec: 4, min: -180, max: 180 });
+numField('iTz', { get: () => S.tzStd, set: v => S.tzStd = v, step: 1, fine: 0.5, dec: 1, min: -12, max: 14 });
+numField('iNorth', { get: () => S.north, set: v => S.north = mod(v + 180, 360) - 180, step: 1, fine: 0.1, dec: 1 });
+numField('iScale', { get: () => S.scale ? S.scale.meters : 0, set: v => { if (S.scale) S.scale.meters = v; }, step: 1, fine: 0.1, dec: 2, min: 0, enabled: () => !!S.scale });
+
+// date et heure
+function retime(fn) { return (n, e) => { fn(n, e); changed(); }; }
+attachScrub($('fDay'), retime(n => S.day += n));
+attachScrub($('fMonth'), retime(n => addMonths(n)));
+attachScrub($('fYear'), retime(n => addMonths(12 * n)));
+attachScrub($('fHour'), retime(n => S.minute += 60 * n));
+attachScrub($('fMin'), retime((n, e) => { const st = e.shiftKey ? 1 : 5; S.minute = Math.round(S.minute / st) * st + n * st; }));
+function editDate() {
+  const c = fromDays(S.day), s = prompt('Date (JJ/MM/AAAA) :', `${pad2(c.d)}/${pad2(c.m + 1)}/${c.y}`);
+  const m = s && s.match(/(\d{1,2})\D+(\d{1,2})(?:\D+(\d{2,4}))?/);
+  if (m) { let y = m[3] ? +m[3] : c.y; if (y < 100) y += 2000; S.day = toDays(y, +m[2] - 1, +m[1]); changed(); }
+}
+function editTime() {
+  const s = prompt('Heure (HH:MM) :', fmtTime(S.minute)), m = s && s.match(/(\d{1,2})(?:\D+(\d{1,2}))?/);
+  if (m) { S.minute = S.minute - mod(S.minute, 1440) + clamp(+m[1], 0, 24) * 60 + clamp(+(m[2] || 0), 0, 59); changed(); }
+}
+['fDay', 'fMonth', 'fYear'].forEach(id => $(id).addEventListener('dblclick', editDate));
+['fHour', 'fMin'].forEach(id => $(id).addEventListener('dblclick', editTime));
+$('rTime').addEventListener('input', e => { S.minute = S.minute - mod(S.minute, 1440) + +e.target.value; changed(); });
+$('rDay').addEventListener('input', e => { S.day = toDays(fromDays(S.day).y, 0, 1) + +e.target.value; changed(); });
+function setUtcMode(u) {
+  if (u === S.utcMode) return;
+  const tot = S.day * 1440 + mod(S.minute, 1440) - curOff() * 60;   // instant en TU
+  S.utcMode = u;
+  let off = u ? 0 : S.tzStd + (S.dstAuto && isEUDST(tot * 60000) ? 1 : 0);
+  const loc = tot + off * 60;
+  S.day = Math.floor(loc / 1440); S.minute = loc - S.day * 1440;
+  S.dDay = S.day; S.dMin = S.minute; S.dOff = curOff();
+  changed();
+}
+$('btnLocal').onclick = () => setUtcMode(false);
+$('btnUTC').onclick = () => setUtcMode(true);
+$('btnNow').onclick = () => {
+  const now = Date.now(), off = S.utcMode ? 0 : S.tzStd + (S.dstAuto && isEUDST(now) ? 1 : 0), loc = now / 6e4 + off * 60;
+  S.day = Math.floor(loc / 1440); S.minute = loc - S.day * 1440; changed();
+};
+$('btnPlay').onclick = () => togglePlay();
+$('playSpeed').onchange = e => S.playSpeed = +e.target.value;
+function togglePlay() {
+  S.playing = !S.playing;
+  if (S.playing) { const ev = dayEvents(S.day, S.utcMode); const m = mod(S.minute, 1440); if (ev.rise !== null && (m < ev.rise || (ev.set !== null && m > ev.set))) { S.minute += mod(ev.rise - m, 1440); S.dMin = S.minute; } }
+  $('btnPlay').textContent = S.playing ? '⏸ Pause' : '▶ Animer la journée';
+}
+const citySel = $('city');
+CITIES.forEach(([n, la, lo]) => { const o = document.createElement('option'); o.value = la + ',' + lo; o.textContent = n; citySel.appendChild(o); });
+citySel.onchange = () => { if (!citySel.value) return; [S.lat, S.lon] = citySel.value.split(',').map(Number); S.tzStd = 1; S.dstAuto = true; changed(); };
+$('cDst').onchange = e => { S.dstAuto = e.target.checked; changed(); };
+$('cScen').onchange = e => { S.showScenario = e.target.checked; changed(); };
+$('cCur').onchange = e => { S.showCurrent = e.target.checked; changed(); };
+$('cOrig').onchange = e => { S.showOrig = e.target.checked; changed(); };
+$('cDims').onchange = e => { S.showDims = e.target.checked; changed(); };
+$('rOpa').oninput = e => { S.opacity = +e.target.value; changed(); };
+
+// immeuble, échelle, modes
+$('btnDraw').onclick = () => { if (!S.clean) return alert('Ouvrez d\'abord un plan.'); setMode(S.mode === 'draw' ? 'select' : 'draw'); };
+$('btnResetB').onclick = () => { if (S.origRect) { S.building = { ...S.origRect }; changed(); } else alert('Pas de rectangle bleu d\'origine sur ce plan.'); };
+$('btnScale').onclick = () => { if (!S.clean) return; setMode(S.mode === 'scale' ? 'select' : 'scale'); };
+$('btnOcr').onclick = () => ocrScale(false);
+$('btnTraj').onclick = () => { if (!S.building) return alert('Aucun immeuble sur le plan.'); setMode(S.mode === 'traj' ? 'select' : 'traj'); };
+$('btnTrajClear').onclick = () => { S.traj = []; changed(); };
+$('mSelect').onclick = () => setMode('select');
+$('mTraj').onclick = () => $('btnTraj').onclick();
+$('mScale').onclick = () => $('btnScale').onclick();
+$('btnFit').onclick = fitView;
+
+// scénario
+function addScen(day, minute) {
+  minute = Math.round(mod(minute, 1440));
+  if (!S.scenario.some(e => e.day === day && e.minute === minute && e.utc === S.utcMode)) S.scenario.push({ day, minute, utc: S.utcMode });
+}
+$('btnScenAdd').onclick = () => { addScen(S.day, S.minute); S.showScenario = true; changed(); };
+$('btnScenClear').onclick = () => { S.scenario = []; changed(); };
+$('scenPreset').onchange = e => {
+  const y = fromDays(S.day).y, v = e.target.value; e.target.value = '';
+  if (v === 'sol') [[11, 21], [2, 20], [5, 21], [8, 22]].forEach(([m, d]) => addScen(toDays(y, m, d), S.minute));
+  if (v === 'day2') for (let h = 8; h <= 18; h += 2) addScen(S.day, h * 60);
+  if (v === 'day1') for (let h = 7; h <= 19; h++) addScen(S.day, h * 60);
+  if (v === 'months') for (let m = 0; m < 12; m++) addScen(toDays(y, m, 21), S.minute);
+  S.showScenario = true; changed();
+};
+
+/* ---------------------------------------------- Synchronisation de l'UI */
+function syncUI() {
+  for (const f of numFields) {
+    const on = !f.enabled || f.enabled();
+    f.el.disabled = !on;
+    if (document.activeElement !== f.el) f.el.value = on ? fmtNum(f.get(), f.dec).replace(/,?0+$/, '').replace(/^-0$/, '0') || '0' : '';
+  }
+  const c = fromDays(S.day);
+  $('fDay').textContent = c.d; $('fMonth').textContent = MONTHS[c.m]; $('fYear').textContent = c.y;
+  const m = Math.round(mod(S.minute, 1440)) % 1440;
+  $('fHour').textContent = pad2(Math.floor(m / 60)); $('fMin').textContent = pad2(m % 60);
+  $('rTime').value = m; $('rDay').value = S.day - toDays(c.y, 0, 1);
+  $('btnLocal').classList.toggle('on', !S.utcMode); $('btnUTC').classList.toggle('on', S.utcMode);
+  const off = curOff();
+  $('tzInfo').textContent = S.utcMode ? 'temps universel' : 'UTC' + (off >= 0 ? '+' : '−') + fmtNum(Math.abs(off), off % 1 ? 1 : 0).replace(/,0$/, '') + (S.dstAuto && off !== S.tzStd ? ' (heure d\'été)' : S.dstAuto ? ' (heure d\'hiver)' : '');
+  $('cDst').checked = S.dstAuto; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
+  $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('rOpa').value = S.opacity;
+  $('levels').textContent = '≈ R+' + Math.max(0, Math.round(S.height / 3) - 1);
+  const ci = CITIES.findIndex(([, la, lo]) => Math.abs(la - S.lat) < 1e-4 && Math.abs(lo - S.lon) < 1e-4);
+  citySel.value = ci >= 0 ? CITIES[ci][1] + ',' + CITIES[ci][2] : '';
+  // échelle
+  const si = $('scaleInfo');
+  if (!S.scale) si.innerHTML = '<span class="warn">Aucun segment d\'échelle : utilisez « Tracer l\'échelle ».</span>';
+  else {
+    const d = dist(S.scale.p1, S.scale.p2);
+    si.innerHTML = 'Segment : ' + fmtNum(d, 0) + ' px' + (scaleOk() ? ' → ' + fmtNum(pxPerM(), 2) + ' px/m' : ' — <span class="warn">saisissez sa longueur réelle</span>');
+  }
+  // listes
+  const tl = $('trajList'); tl.innerHTML = '';
+  S.traj.forEach((t, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="sw" style="background:${TR_COLORS[i % TR_COLORS.length]}"></span><span class="t">${t.corner ? 'Coin' : 'Point du toit'} n° ${i + 1} — ${fmtDate(S.day, true)}</span>`;
+    const x = document.createElement('button'); x.className = 'small'; x.textContent = '×'; x.title = 'Supprimer';
+    x.onclick = () => { S.traj.splice(i, 1); changed(); }; li.appendChild(x); tl.appendChild(li);
+  });
+  const sl = $('scenList'); sl.innerHTML = '';
+  S.scenario.forEach((e, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="sw" style="background:${SC_COLORS[i % SC_COLORS.length]}"></span><span class="t">${fmtDate(e.day)} — ${fmtTime(e.minute)} ${e.utc ? 'TU' : '<span class="hint">loc.</span>'}</span>`;
+    const go = document.createElement('button'); go.className = 'small'; go.textContent = '→'; go.title = 'Aller à cet instant';
+    go.onclick = () => { if (e.utc !== S.utcMode) setUtcMode(e.utc); S.day = e.day; S.minute = S.minute - mod(S.minute, 1440) + e.minute; changed(); };
+    const x = document.createElement('button'); x.className = 'small'; x.textContent = '×'; x.title = 'Supprimer';
+    x.onclick = () => { S.scenario.splice(i, 1); changed(); };
+    li.append(go, x); sl.appendChild(li);
+  });
+}
+let lastInfo = '';
+function updateSunInfo() {
+  const sun = curSun(), ev = dayEvents(S.day, S.utcMode), lbl = S.utcMode ? 'TU' : 'h. locale';
+  const card = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round(sun.az / 22.5) % 16];
+  let h = '';
+  if (sun.alt > 0) {
+    const L = S.dH / Math.tan(sun.alt * D2R);
+    h += `Soleil : hauteur <b>${fmtNum(sun.alt)}°</b>, azimut <b>${fmtNum(sun.az)}°</b> (${card})<br>`;
+    h += `Longueur de l'ombre : <b>${L > 9999 ? '> 10 km' : fmtNum(L) + ' m'}</b> (${fmtNum(L / Math.max(S.dH, 1e-6), 2)} × la hauteur)<br>`;
+  } else h += '<b>Soleil sous l\'horizon</b> : pas d\'ombre portée.<br>';
+  h += ev.rise !== null ? `Lever ${fmtTime(ev.rise)} · midi solaire ${fmtTime(ev.noon)} · coucher ${fmtTime(ev.set ?? 1440)} <span class="hint">(${lbl})</span><br>` : (ev.maxAlt > 0 ? 'Jour polaire.<br>' : 'Nuit polaire.<br>');
+  h += `<span class="hint">Hauteur max. du soleil ce jour : ${fmtNum(ev.maxAlt)}°</span>`;
+  if (!scaleOk() && S.clean) h += '<br><span class="warn">⚠ Échelle non définie : les longueurs sont approximatives (10 px/m).</span>';
+  if (h !== lastInfo) { $('sunInfo').innerHTML = h; lastInfo = h; }
+}
+let saveT = 0;
+function changed() { syncUI(); S.dirty = true; clearTimeout(saveT); saveT = setTimeout(saveSettings, 400); }
+function saveSettings() {
+  try { localStorage.setItem('ombre-portee', JSON.stringify({ lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto, utcMode: S.utcMode, opacity: S.opacity, height: S.height })); } catch (e) { }
+}
+function loadSettings() {
+  try { const o = JSON.parse(localStorage.getItem('ombre-portee') || 'null'); if (o) for (const k of ['lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'opacity', 'height']) if (o[k] !== undefined) S[k] = o[k]; } catch (e) { }
+}
+let statusT = 0;
+function status(t, msg) { const el = $('status'); el.textContent = t || ''; el.classList.toggle('msg', !!msg); }
+
+/* --------------------------------------------- Fichiers : sauver / exporter */
+async function saveBlob(blob, name, desc, mime, ext) {
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: desc, accept: { [mime]: [ext] } }] });
+      const w = await h.createWritable(); await w.write(blob); await w.close(); status('Enregistré : ' + h.name, true); return;
+    } catch (e) { if (e.name === 'AbortError') return; console.warn(e); }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  status('Fichier téléchargé : ' + name, true);
+}
+const canvasBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+$('btnSaveProj').onclick = async () => {
+  if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
+  const p = {
+    app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL,
+    building: S.building, height: S.height, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
+    utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner }) => ({ u, v, corner })),
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims
+  };
+  await saveBlob(new Blob([JSON.stringify(p)], { type: 'application/json' }), S.fileName + '.ombre.json', 'Projet Ombre portée', 'application/json', '.json');
+};
+async function loadProject(p) {
+  if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
+  const c = imgToCanvas(await loadImg(p.image));
+  for (const k of ['building', 'height', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims'])
+    if (p[k] !== undefined) S[k] = p[k];
+  S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
+  setImage(c, p.image, p.fileName, true);
+  status('Projet « ' + (p.fileName || '') + ' » ouvert.', true);
+}
+$('btnSavePlan').onclick = async () => {
+  if (!S.clean) return alert('Ouvrez d\'abord un plan.');
+  const c = cloneCanvas(S.clean), x = c.getContext('2d'), b = S.building;
+  if (b) {
+    const st = S.origStyle || { color: '#0000ff', filled: true, thick: 0 };
+    if (st.filled) { polyPath(x, corners(b)); x.fillStyle = st.color; x.fill(); }
+    else { const t = st.thick; polyPath(x, corners({ ...b, w: Math.max(1, b.w - t), l: Math.max(1, b.l - t) })); x.strokeStyle = st.color; x.lineWidth = t; x.stroke(); }
+  }
+  await saveBlob(await canvasBlob(c), S.fileName + '_modifie.png', 'Image PNG', 'image/png', '.png');
+};
+function snapshot(k = 2) {
+  const c = document.createElement('canvas'); c.width = Math.round(CW * k); c.height = Math.round(CH * k);
+  render(c.getContext('2d'), CW, CH, V, { k, print: true }); return c;
+}
+$('btnExportView').onclick = async () => {
+  if (!S.clean) return alert('Ouvrez d\'abord un plan.');
+  await saveBlob(await canvasBlob(snapshot(2)), S.fileName + '_ombres.png', 'Image PNG', 'image/png', '.png');
+};
+function preparePrint() {
+  if (!S.clean) return false;
+  S.dDay = S.day; S.dMin = S.minute; S.dOff = curOff(); S.dH = S.height;
+  $('printImg').src = snapshot(2.5).toDataURL('image/png');
+  const b = S.building, ppm = pxPerM(), sun = curSun();
+  const li = [];
+  li.push(`<b>Plan :</b> ${S.fileName}`);
+  li.push(`<b>Lieu :</b> ${fmtNum(S.lat, 4)}° N, ${fmtNum(S.lon, 4)}° E — nord du plan : ${fmtNum(S.north)}°`);
+  li.push(`<b>Date :</b> ${fmtDate(S.day)} — ${fmtTime(S.minute)} ${S.utcMode ? 'TU' : '(heure locale, ' + $('tzInfo').textContent + ')'}`);
+  li.push(`<b>Soleil :</b> ${sun.alt > 0 ? 'hauteur ' + fmtNum(sun.alt) + '°, azimut ' + fmtNum(sun.az) + '°' : 'sous l\'horizon'}`);
+  if (b) li.push(`<b>Immeuble :</b> ${fmtNum(b.w / ppm)} × ${fmtNum(b.l / ppm)} m, hauteur ${fmtNum(S.height)} m`);
+  li.push(`<b>Échelle :</b> ${scaleOk() ? fmtNum(ppm, 2) + ' px/m' : 'non définie'}`);
+  if (S.showScenario && S.scenario.length) li.push('<b>Scénario :</b> ' + S.scenario.map((e, i) => `<span style="color:${SC_COLORS[i % SC_COLORS.length]}">■</span> ${fmtDate(e.day, true)} ${fmtTime(e.minute)}${e.utc ? ' TU' : ''}`).join(' · '));
+  if (S.traj.length) li.push(`<b>Trajectoires :</b> ${S.traj.length} point(s), journée du ${fmtDate(S.day)}`);
+  $('printInfo').innerHTML = li.join('<br>');
+  return true;
+}
+$('btnPrint').onclick = () => {
+  if (!preparePrint()) return alert('Ouvrez d\'abord un plan.');
+  const img = $('printImg');
+  (img.complete ? Promise.resolve() : new Promise(r => img.onload = r)).then(() => window.print());
+};
+window.addEventListener('beforeprint', preparePrint);
+$('btnOpen').onclick = () => $('fileIn').click();
+$('fileIn').onchange = e => { const f = e.target.files[0]; if (f) openFile(f); e.target.value = ''; };
+$('btnDemo').onclick = () => {
+  const c = makeDemo(); setImage(c, c.toDataURL('image/png'), 'plan_demo');
+};
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) openFile(f); });
+
+/* ---------------------------------------------------------------- Clavier */
+document.addEventListener('keydown', e => {
+  const tg = e.target.tagName;
+  if (tg === 'INPUT' && e.target.type === 'text' || tg === 'SELECT' || tg === 'TEXTAREA') return;
+  let done = true;
+  switch (e.key) {
+    case 'ArrowLeft': S.minute -= e.shiftKey ? 1 : 15; break;
+    case 'ArrowRight': S.minute += e.shiftKey ? 1 : 15; break;
+    case 'ArrowUp': S.day += 1; break;
+    case 'ArrowDown': S.day -= 1; break;
+    case 'PageUp': addMonths(1); break;
+    case 'PageDown': addMonths(-1); break;
+    case '+': S.height += 1; break;
+    case '-': S.height = Math.max(0, S.height - 1); break;
+    case ' ': togglePlay(); break;
+    case 'Escape': setMode('select'); break;
+    default: done = false;
+  }
+  if (done) { e.preventDefault(); changed(); }
+});
+
+/* ------------------------------------------------------- Boucle d'animation */
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (S.playing) {
+    S.minute += S.playSpeed * dt; S.dMin = S.minute;
+    const ev = dayEvents(S.day, S.utcMode), m = mod(S.minute, 1440);
+    if (ev.rise !== null && ev.set !== null && ev.set > ev.rise && (m > ev.set + 2 || m < ev.rise)) { S.minute += mod(ev.rise - m, 1440); S.dMin = S.minute; }
+    syncTimeOnly();
+  }
+  const k = 1 - Math.exp(-dt * 10);
+  let moving = false;
+  const ease = (d, t, eps) => { const df = t - d; if (Math.abs(df) > eps) { moving = true; return d + df * k; } return t; };
+  S.dDay = ease(S.dDay, S.day, 1e-4);
+  S.dMin = ease(S.dMin, S.minute, 0.01);
+  S.dOff = ease(S.dOff, curOff(), 1e-4);
+  S.dH = ease(S.dH, S.height, 1e-3);
+  if (moving || S.dirty || S.playing) { draw(); updateSunInfo(); S.dirty = false; }
+  requestAnimationFrame(tick);
+}
+function syncTimeOnly() {
+  const m = Math.round(mod(S.minute, 1440)) % 1440;
+  $('fHour').textContent = pad2(Math.floor(m / 60)); $('fMin').textContent = pad2(m % 60); $('rTime').value = m;
+}
+
+/* ------------------------------------------------------------- Démarrage */
+loadSettings();
+{
+  const now = Date.now(), off = S.utcMode ? 0 : S.tzStd + (S.dstAuto && isEUDST(now) ? 1 : 0);
+  S.day = Math.floor((now / 6e4 + off * 60) / 1440); S.minute = 720;
+  S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
+}
+new ResizeObserver(() => { const had = CW; resizeCanvas(); if (!had) fitView(); }).observe($('stage'));
+resizeCanvas();
+syncUI();
+setMode('select');
+status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle bleu et un segment rouge d\'échelle, ou essayez le plan de démonstration.');
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
