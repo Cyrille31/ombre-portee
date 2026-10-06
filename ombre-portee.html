@@ -103,6 +103,8 @@ input.big{font-size:18px;font-weight:600;width:90px}
   <section>
     <h2>Immeuble</h2>
     <div class="f"><span class="lbl drag" data-for="iH"><b>Hauteur</b></span><input type="text" id="iH" class="big"><span class="u">m</span><span id="levels" class="hint"></span></div>
+    <div class="f"><span class="lbl drag" data-for="iDz">Niveau / terrain</span><input type="text" id="iDz"><span class="u">m</span></div>
+    <div class="hint">Sol en pente : niveau du pied de l'immeuble par rapport au terrain où tombe l'ombre (+ = plus haut). L'ombre est celle d'une hauteur H + niveau.</div>
     <div class="f"><span class="lbl drag" data-for="iW">Longueur</span><input type="text" id="iW"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iL">Largeur</span><input type="text" id="iL"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iA">Rotation</span><input type="text" id="iA"><span class="u">°</span></div>
@@ -156,11 +158,22 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <select id="scenPreset" style="width:100%">
         <option value="">— Ajouter un modèle —</option>
         <option value="sol">Solstices et équinoxes à l'heure courante</option>
+        <option value="day3">Journée courante, toutes les 3 h (dont midi)</option>
         <option value="day2">Journée courante, de 8 h à 18 h toutes les 2 h</option>
         <option value="day1">Journée courante, de 7 h à 19 h toutes les heures</option>
         <option value="months">Le 21 de chaque mois à l'heure courante</option>
+        <optgroup label="Solstices et équinoxes à heure fixe">
+          <option value="solH6">Solstices et équinoxes à 6 h</option>
+          <option value="solH9">Solstices et équinoxes à 9 h</option>
+          <option value="solH12">Solstices et équinoxes à midi</option>
+          <option value="solH15">Solstices et équinoxes à 15 h</option>
+          <option value="solH18">Solstices et équinoxes à 18 h</option>
+          <option value="solH21">Solstices et équinoxes à 21 h</option>
+        </optgroup>
       </select>
     </div>
+    <div class="row"><label title="Heure solaire vraie : 12 h = passage du soleil plein sud"><input type="checkbox" id="cSolar"> Heures des modèles en heure solaire (sinon heure légale)</label></div>
+    <div class="hint">Les instants où le soleil est couché ne sont pas ajoutés.</div>
     <ul id="scenList" class="list"></ul>
   </section>
 
@@ -234,7 +247,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  building: null, height: 15, dH: 15,
+  building: null, height: 15, dH: 15, dz: 0, solarPresets: false,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -333,6 +346,11 @@ function shadowOffset(sun, hM) {
 }
 function localToWorld(b, lx, ly) { const c = Math.cos(b.a), s = Math.sin(b.a); return { x: b.cx + lx * c - ly * s, y: b.cy + lx * s + ly * c }; }
 function worldToLocal(b, x, y) { const c = Math.cos(b.a), s = Math.sin(b.a), dx = x - b.cx, dy = y - b.cy; return { x: dx * c + dy * s, y: -dx * s + dy * c }; }
+/** Oriente le rectangle pour que la longueur (w) soit le grand côté. */
+function longSide(b) {
+  if (b && b.w < b.l) { [b.w, b.l] = [b.l, b.w]; b.a += Math.PI / 2; if (b.a > Math.PI / 2 + 1e-9) b.a -= Math.PI; }
+  return b;
+}
 function corners(b) { return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => localToWorld(b, u * b.w / 2, v * b.l / 2)); }
 function hull(pts) {
   pts = pts.slice().sort((a, b) => a.x - b.x || a.y - b.y);
@@ -342,6 +360,17 @@ function hull(pts) {
   for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
   for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
   up.pop(); lo.pop(); return lo.concat(up);
+}
+/** Point où la demi-droite (o, dir) sort du polygone convexe. */
+function farEdge(poly, o, dir) {
+  let best = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length], ex = q.x - p.x, ey = q.y - p.y;
+    const den = dir.x * ey - dir.y * ex; if (Math.abs(den) < 1e-12) continue;
+    const t = ((p.x - o.x) * ey - (p.y - o.y) * ex) / den, u = ((p.x - o.x) * dir.y - (p.y - o.y) * dir.x) / den;
+    if (t > best && u >= -1e-9 && u <= 1 + 1e-9) best = t;
+  }
+  return { x: o.x + dir.x * best, y: o.y + dir.y * best };
 }
 function shadowPoly(b, off) { const c = corners(b); return hull(c.concat(c.map(p => ({ x: p.x + off.x, y: p.y + off.y })))); }
 
@@ -520,7 +549,7 @@ function setImage(canvas, dataURL, name, keep) {
   const an = analyzeImage(canvas);
   S.clean = cloneCanvas(canvas);
   S.origRect = null; S.origStyle = null;
-  if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = an.blue.rect; S.origStyle = an.blue.style; }
+  if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = longSide(an.blue.rect); S.origStyle = an.blue.style; }
   const msgs = [];
   if (!keep) {
     S.building = S.origRect ? { ...S.origRect } : null;
@@ -706,7 +735,7 @@ function render(ctx, W, H, v, opt = {}) {
     ctx.fillText('ou essayez le « Plan de démonstration ».', W / 2, H / 2 + 14);
     return;
   }
-  const b = S.building, ppm = pxPerM(), hM = S.dH, sun = curSun(), px = 1 / v.s;
+  const b = S.building, ppm = pxPerM(), hM = Math.max(0, S.dH + S.dz), sun = curSun(), px = 1 / v.s;
   ctx.save(); ctx.setTransform(k * v.s, 0, 0, k * v.s, k * v.ox, k * v.oy);
   ctx.imageSmoothingEnabled = v.s < 3;
   ctx.drawImage(S.clean, 0, 0);
@@ -717,8 +746,9 @@ function render(ctx, W, H, v, opt = {}) {
   if (b) {
     if (S.showScenario) S.scenario.forEach((e, i) => {
       const off = offsetFor(e.day, e.minute, e.utc), s = sunFor(e.day, e.minute, off), so = shadowOffset(s, hM), col = SC_COLORS[i % SC_COLORS.length];
-      if (so) { polyPath(ctx, shadowPoly(b, so)); ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
-      scen.push({ e, so, col });
+      const poly = so ? shadowPoly(b, so) : null;
+      if (so) { polyPath(ctx, poly); ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
+      scen.push({ e, so, col, poly });
     });
     if (!S.showScenario || !S.scenario.length || S.showCurrent) {
       const so = shadowOffset(sun, hM);
@@ -806,7 +836,7 @@ function render(ctx, W, H, v, opt = {}) {
     };
     edgeLabel(bS[0], bS[1], fmtNum(b.w / ppm) + ' m');
     edgeLabel(bS[3], bS[0], fmtNum(b.l / ppm) + ' m');
-    if (Math.min(b.w, b.l) * v.s > 34) { ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.fillText('H ' + fmtNum(hM, hM % 1 ? 1 : 0) + ' m', cS.x, cS.y); }
+    if (Math.min(b.w, b.l) * v.s > 34) { ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui, sans-serif'; ctx.fillText('H ' + fmtNum(S.dH, S.dH % 1 ? 1 : 0) + ' m' + (S.dz ? ' (' + (S.dz > 0 ? '+' : '−') + fmtLen(Math.abs(S.dz)) + ')' : ''), cS.x, cS.y); }
   }
 
   // poignées
@@ -826,11 +856,11 @@ function render(ctx, W, H, v, opt = {}) {
   // étiquettes du scénario
   ctx.font = '12px system-ui, sans-serif';
   if (b) for (const s of scen) {
-    const txt = fmtDate(s.e.day, true) + ' ' + fmtTime(s.e.minute) + (s.e.utc ? ' TU' : '') + (s.so ? '' : ' — nuit');
+    const txt = fmtDate(s.e.day, true) + ' ' + scenTime(s.e) + (s.so ? '' : ' — nuit');
     const w = ctx.measureText(txt).width + 14;
     let a, dir;
     if (s.so) {
-      const tip = toS({ x: b.cx + s.so.x, y: b.cy + s.so.y }, v);
+      const tip = toS(farEdge(s.poly, { x: b.cx + s.so.x, y: b.cy + s.so.y }, s.so), v);   // bord extrême de l'ombre
       dir = Math.atan2(s.so.y, s.so.x);
       a = { x: clamp(tip.x, 12, W - 12), y: clamp(tip.y, 12, H - 12) };
     } else { a = toS({ x: b.cx, y: b.cy }, v); dir = Math.PI / 2; }
@@ -989,7 +1019,7 @@ cv.addEventListener('pointerup', e => {
   if (drag.type === 'draw') {
     const { p1, p2 } = S.temp; S.temp = null;
     if (Math.abs(p2.x - p1.x) * V.s > 5 && Math.abs(p2.y - p1.y) * V.s > 5) {
-      S.building = { cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 };
+      S.building = longSide({ cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 });
       setMode('select');
     }
   }
@@ -1055,6 +1085,7 @@ function numField(id, o) {
 }
 const B = () => S.building;
 numField('iH', { get: () => S.height, set: v => S.height = v, step: 1, fine: 0.1, dec: 1, min: 0, max: 1000 });
+numField('iDz', { get: () => S.dz, set: v => S.dz = v, step: 0.5, fine: 0.1, dec: 2, min: -200, max: 200 });
 numField('iW', { get: () => B().w / pxPerM(), set: v => B().w = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iL', { get: () => B().l / pxPerM(), set: v => B().l = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iA', { get: () => B().a * R2D, set: v => B().a = mod(v + 180, 360) * D2R - Math.PI, step: 1, fine: 0.1, dec: 1, enabled: B });
@@ -1112,6 +1143,7 @@ function togglePlay() {
 const citySel = $('city');
 CITIES.forEach(([n, la, lo]) => { const o = document.createElement('option'); o.value = la + ',' + lo; o.textContent = n; citySel.appendChild(o); });
 citySel.onchange = () => { if (!citySel.value) return; [S.lat, S.lon] = citySel.value.split(',').map(Number); S.tzStd = 1; S.dstAuto = true; changed(); };
+$('cSolar').onchange = e => { S.solarPresets = e.target.checked; changed(); };
 $('cDst').onchange = e => { S.dstAuto = e.target.checked; changed(); };
 $('cScen').onchange = e => { S.showScenario = e.target.checked; changed(); };
 $('cCur').onchange = e => { S.showCurrent = e.target.checked; changed(); };
@@ -1133,19 +1165,44 @@ $('mScale').onclick = () => $('btnScale').onclick();
 $('btnFit').onclick = fitView;
 
 // scénario
-function addScen(day, minute) {
+function addScen(day, minute, solar) {
   minute = Math.round(mod(minute, 1440));
-  if (!S.scenario.some(e => e.day === day && e.minute === minute && e.utc === S.utcMode)) S.scenario.push({ day, minute, utc: S.utcMode });
+  if (S.scenario.some(e => e.day === day && e.minute === minute && e.utc === S.utcMode)) return;
+  const e = { day, minute, utc: S.utcMode }; if (solar !== undefined) e.solar = solar;
+  S.scenario.push(e);
+}
+const scenTime = e => fmtTime(e.minute) + (e.utc ? ' TU' : '') + (e.solar !== undefined ? ' (' + e.solar + ' h sol.)' : '');
+/** Heure affichée (min) correspondant à l'heure solaire vraie H ce jour-là. */
+function solarToShown(day, H) {
+  let m = H * 60;
+  for (let i = 0; i < 3; i++) {
+    const off = offsetFor(day, mod(m, 1440), S.utcMode), s = sunFor(day, m, off);
+    m = H * 60 - s.eqt - 4 * S.lon + off * 60;
+  }
+  return m;
 }
 $('btnScenAdd').onclick = () => { addScen(S.day, S.minute); S.showScenario = true; changed(); };
 $('btnScenClear').onclick = () => { S.scenario = []; changed(); };
 $('scenPreset').onchange = e => {
   const y = fromDays(S.day).y, v = e.target.value; e.target.value = '';
-  if (v === 'sol') [[11, 21], [2, 20], [5, 21], [8, 22]].forEach(([m, d]) => addScen(toDays(y, m, d), S.minute));
-  if (v === 'day2') for (let h = 8; h <= 18; h += 2) addScen(S.day, h * 60);
-  if (v === 'day1') for (let h = 7; h <= 19; h++) addScen(S.day, h * 60);
-  if (v === 'months') for (let m = 0; m < 12; m++) addScen(toDays(y, m, 21), S.minute);
+  const SOL = [[2, 20], [5, 21], [8, 22], [11, 21]].map(([m, d]) => toDays(y, m, d));
+  let nAdd = 0, nNight = 0;
+  // ajoute l'instant (heure fixe H : légale ou solaire selon l'option), sauf s'il fait nuit
+  const add = (day, H, minute) => {
+    const solar = H !== undefined && S.solarPresets;
+    if (H !== undefined) minute = solar ? solarToShown(day, H) : H * 60;
+    const mm = Math.round(mod(minute, 1440));
+    if (sunFor(day, mm, offsetFor(day, mm, S.utcMode)).alt <= 0) { nNight++; return; }
+    addScen(day, mm, solar ? H : undefined); nAdd++;
+  };
+  if (v === 'sol') SOL.forEach(d => add(d, undefined, S.minute));
+  if (v === 'day3') for (let h = 0; h < 24; h += 3) add(S.day, h);
+  if (v === 'day2') for (let h = 8; h <= 18; h += 2) add(S.day, h);
+  if (v === 'day1') for (let h = 7; h <= 19; h++) add(S.day, h);
+  if (v === 'months') for (let m = 0; m < 12; m++) add(toDays(y, m, 21), undefined, S.minute);
+  if (v.startsWith('solH')) SOL.forEach(d => add(d, +v.slice(4)));
   S.showScenario = true; changed();
+  status(nAdd + ' instant(s) ajouté(s)' + (nNight ? ', ' + nNight + ' ignoré(s) (soleil couché)' : '') + '.', true);
 };
 
 // sections repliables (état mémorisé)
@@ -1177,7 +1234,7 @@ function syncUI() {
   $('btnLocal').classList.toggle('on', !S.utcMode); $('btnUTC').classList.toggle('on', S.utcMode);
   const off = curOff();
   $('tzInfo').textContent = S.utcMode ? 'temps universel' : 'UTC' + (off >= 0 ? '+' : '−') + fmtNum(Math.abs(off), off % 1 ? 1 : 0).replace(/,0$/, '') + (S.dstAuto && off !== S.tzStd ? ' (heure d\'été)' : S.dstAuto ? ' (heure d\'hiver)' : '');
-  $('cDst').checked = S.dstAuto; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
+  $('cDst').checked = S.dstAuto; $('cSolar').checked = S.solarPresets; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
   $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('rOpa').value = S.opacity;
   $('levels').textContent = '≈ R+' + Math.max(0, Math.round(S.height / 3) - 1);
   const bb = S.building, ppm = pxPerM();
@@ -1204,7 +1261,7 @@ function syncUI() {
   const sl = $('scenList'); sl.innerHTML = '';
   S.scenario.forEach((e, i) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="sw" style="background:${SC_COLORS[i % SC_COLORS.length]}"></span><span class="t">${fmtDate(e.day)} — ${fmtTime(e.minute)} ${e.utc ? 'TU' : '<span class="hint">loc.</span>'}</span>`;
+    li.innerHTML = `<span class="sw" style="background:${SC_COLORS[i % SC_COLORS.length]}"></span><span class="t">${fmtDate(e.day)} — ${scenTime(e)}${e.utc ? '' : ' <span class="hint">loc.</span>'}</span>`;
     const go = document.createElement('button'); go.className = 'small'; go.textContent = '→'; go.title = 'Aller à cet instant';
     go.onclick = () => { if (e.utc !== S.utcMode) setUtcMode(e.utc); S.day = e.day; S.minute = S.minute - mod(S.minute, 1440) + e.minute; changed(); };
     const x = document.createElement('button'); x.className = 'small'; x.textContent = '×'; x.title = 'Supprimer';
@@ -1218,9 +1275,9 @@ function updateSunInfo() {
   const card = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'][Math.round(sun.az / 22.5) % 16];
   let h = '';
   if (sun.alt > 0) {
-    const L = S.dH / Math.tan(sun.alt * D2R);
+    const hE = Math.max(0, S.dH + S.dz), L = hE / Math.tan(sun.alt * D2R);
     h += `Soleil : hauteur <b>${fmtNum(sun.alt)}°</b>, azimut <b>${fmtNum(sun.az)}°</b> (${card})<br>`;
-    h += `Longueur de l'ombre : <b>${L > 9999 ? '> 10 km' : fmtNum(L) + ' m'}</b> (${fmtNum(L / Math.max(S.dH, 1e-6), 2)} × la hauteur)<br>`;
+    h += `Longueur de l'ombre : <b>${L > 9999 ? '> 10 km' : fmtNum(L) + ' m'}</b> (${fmtNum(1 / Math.tan(sun.alt * D2R), 2)} × la hauteur${S.dz ? ' de ' + fmtLen(hE) + ' m' : ''})<br>`;
   } else h += '<b>Soleil sous l\'horizon</b> : pas d\'ombre portée.<br>';
   h += ev.rise !== null ? `Lever ${fmtTime(ev.rise)} · midi solaire ${fmtTime(ev.noon)} · coucher ${fmtTime(ev.set ?? 1440)} <span class="hint">(${lbl})</span><br>` : (ev.maxAlt > 0 ? 'Jour polaire.<br>' : 'Nuit polaire.<br>');
   h += `<span class="hint">Hauteur max. du soleil ce jour : ${fmtNum(ev.maxAlt)}°</span>`;
@@ -1230,10 +1287,10 @@ function updateSunInfo() {
 let saveT = 0;
 function changed() { syncUI(); S.dirty = true; clearTimeout(saveT); saveT = setTimeout(saveSettings, 400); }
 function saveSettings() {
-  try { localStorage.setItem('ombre-portee', JSON.stringify({ lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto, utcMode: S.utcMode, opacity: S.opacity, height: S.height })); } catch (e) { }
+  try { localStorage.setItem('ombre-portee', JSON.stringify({ utcMode: S.utcMode, opacity: S.opacity, height: S.height, solarPresets: S.solarPresets })); } catch (e) { }
 }
 function loadSettings() {
-  try { const o = JSON.parse(localStorage.getItem('ombre-portee') || 'null'); if (o) for (const k of ['lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'opacity', 'height']) if (o[k] !== undefined) S[k] = o[k]; } catch (e) { }
+  try { const o = JSON.parse(localStorage.getItem('ombre-portee') || 'null'); if (o) for (const k of ['utcMode', 'opacity', 'height', 'solarPresets']) if (o[k] !== undefined) S[k] = o[k]; } catch (e) { }
 }
 let statusT = 0;
 function status(t, msg) { const el = $('status'); el.textContent = t || ''; el.classList.toggle('msg', !!msg); }
@@ -1255,7 +1312,7 @@ $('btnSaveProj').onclick = async () => {
   if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
   const p = {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL,
-    building: S.building, height: S.height, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
+    building: S.building, height: S.height, dz: S.dz, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner }) => ({ u, v, corner })),
     scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims
   };
@@ -1264,7 +1321,7 @@ $('btnSaveProj').onclick = async () => {
 async function loadProject(p) {
   if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
   const c = imgToCanvas(await loadImg(p.image));
-  for (const k of ['building', 'height', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims'])
+  for (const k of ['building', 'height', 'dz', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims'])
     if (p[k] !== undefined) S[k] = p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   setImage(c, p.image, p.fileName, true);
@@ -1298,9 +1355,9 @@ function preparePrint() {
   li.push(`<b>Lieu :</b> ${fmtNum(S.lat, 4)}° N, ${fmtNum(S.lon, 4)}° E — nord du plan : ${fmtNum(S.north)}°`);
   li.push(`<b>Date :</b> ${fmtDate(S.day)} — ${fmtTime(S.minute)} ${S.utcMode ? 'TU' : '(heure locale, ' + $('tzInfo').textContent + ')'}`);
   li.push(`<b>Soleil :</b> ${sun.alt > 0 ? 'hauteur ' + fmtNum(sun.alt) + '°, azimut ' + fmtNum(sun.az) + '°' : 'sous l\'horizon'}`);
-  if (b) li.push(`<b>Immeuble :</b> ${fmtNum(b.w / ppm)} × ${fmtNum(b.l / ppm)} m, hauteur ${fmtNum(S.height)} m`);
+  if (b) li.push(`<b>Immeuble :</b> ${fmtNum(b.w / ppm)} × ${fmtNum(b.l / ppm)} m (emprise ${fmtNum(b.w * b.l / (ppm * ppm), 0)} m²), hauteur ${fmtNum(S.height)} m${S.dz ? ', niveau / terrain ' + (S.dz > 0 ? '+' : '') + fmtLen(S.dz) + ' m' : ''}`);
   li.push(`<b>Échelle :</b> ${scaleOk() ? fmtNum(ppm, 2) + ' px/m' : 'non définie'}`);
-  if (S.showScenario && S.scenario.length) li.push('<b>Scénario :</b> ' + S.scenario.map((e, i) => `<span style="color:${SC_COLORS[i % SC_COLORS.length]}">■</span> ${fmtDate(e.day, true)} ${fmtTime(e.minute)}${e.utc ? ' TU' : ''}`).join(' · '));
+  if (S.showScenario && S.scenario.length) li.push('<b>Scénario :</b> ' + S.scenario.map((e, i) => `<span style="color:${SC_COLORS[i % SC_COLORS.length]}">■</span> ${fmtDate(e.day, true)} ${scenTime(e)}`).join(' · '));
   if (S.traj.length) li.push(`<b>Trajectoires :</b> ${S.traj.length} point(s), journée du ${fmtDate(S.day)}`);
   $('printInfo').innerHTML = li.join('<br>');
   return true;
