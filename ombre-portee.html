@@ -58,6 +58,12 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #status{padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status.msg{color:var(--text)}
 #printArea{display:none}
+#gl,#ov{position:absolute;inset:0;width:100%;height:100%;display:block}
+#gl{touch-action:none}
+#ov{pointer-events:none}
+[hidden]{display:none!important}
+.pop{position:fixed;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.2);padding:8px 10px;width:250px}
+.pop .t{font-weight:600;margin-bottom:4px}
 @media print{
   @page{margin:10mm}
   html,body{height:auto;background:#fff}
@@ -114,6 +120,14 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <button id="btnDraw">Dessiner un immeuble</button>
       <button id="btnResetB">Position d'origine</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Constructions voisines</h2>
+    <div id="nbInfo" class="hint"></div>
+    <div class="f"><span class="lbl drag" data-for="iDefH">Hauteur par défaut</span><input type="text" id="iDefH"><span class="u">m</span></div>
+    <div class="hint">Les constructions orange du plan sont détectées automatiquement (même coupées par un trait noir). <b>Clic droit</b> sur une construction, en 2D ou en 3D, pour saisir sa hauteur (molette pour la régler). La hauteur par défaut s'applique aux constructions sans hauteur saisie (0 = à plat).</div>
+    <div class="row"><button id="btnNbClear" class="small">Effacer toutes les hauteurs</button></div>
   </section>
 
   <section>
@@ -183,7 +197,8 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row"><label><input type="checkbox" id="cOrig" checked> Contour de l'emplacement d'origine</label></div>
     <div class="row"><label><input type="checkbox" id="cDims" checked> Cotes sur le plan</label></div>
     <div class="hint" style="margin-top:8px">
-      Plan : molette = zoom, glisser le fond (ou clic droit) = déplacer.<br>
+      Plan : molette = zoom, glisser le fond (ou clic droit) = déplacer, clic droit sur une construction = sa hauteur.<br>
+      3D : Maj + glisser (ou clic droit + glisser) = pivoter / incliner, glisser = déplacer la vue ou l'immeuble.<br>
       Clavier : ←/→ ±15 min, ↑/↓ ±1 jour, PgPréc/PgSuiv ±1 mois, +/− hauteur, Espace = animer, Échap = annuler.
     </div>
   </section>
@@ -203,8 +218,11 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <button id="mSelect" class="on">Sélection</button><button id="mTraj">Trajectoire</button><button id="mScale">Échelle</button>
     </div>
     <button id="btnFit" title="Afficher tout le plan">Ajuster la vue</button>
+    <span class="sep"></span>
+    <div class="seg" title="Vue 3D : Maj + glisser sur le plan pour pivoter / incliner"><button id="v2d" class="on">2D</button><button id="v3d">3D</button></div>
+    <button id="btnTop" disabled title="Revenir à une vue de dessus, nord en haut">Vue de dessus</button>
   </div>
-  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="stage"><canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas></div>
   <div id="status"></div>
 </main>
 </div>
@@ -213,6 +231,12 @@ input.big{font-size:18px;font-weight:600;width:90px}
   <h1 id="printTitle">Étude d'ombre portée</h1>
   <div id="printInfo"></div>
   <img id="printImg" alt="">
+</div>
+<div id="hPop" class="pop" hidden>
+  <div class="t" id="hPopT">Hauteur</div>
+  <div class="f"><input type="text" id="hPopV" class="big"><span class="u">m</span></div>
+  <div class="hint">Molette : ± 0,5 m (Maj : ± 0,1 m). Entrée pour valider.</div>
+  <div class="row"><button id="hPopOk" class="on">OK</button><button id="hPopDel">Supprimer la hauteur</button></div>
 </div>
 <input type="file" id="fileIn" accept="image/*,.pdf,.json,application/pdf" hidden>
 
@@ -247,7 +271,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  building: null, height: 15, dH: 15, dz: 0, solarPresets: false,
+  building: null, height: 15, dH: 15, dz: 0, solarPresets: false, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -550,15 +574,19 @@ function setImage(canvas, dataURL, name, keep) {
   S.clean = cloneCanvas(canvas);
   S.origRect = null; S.origStyle = null;
   if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = longSide(an.blue.rect); S.origStyle = an.blue.style; }
+  NB = detectNeighbors(canvas);
+  if (keep) applyHeights(S.pendingHeights);
+  S.pendingHeights = null; S.hVer++;
   const msgs = [];
   if (!keep) {
     S.building = S.origRect ? { ...S.origRect } : null;
     S.traj = [];
     S.scale = an.red ? { p1: an.red.p1, p2: an.red.p2, meters: 0, thick: an.red.thick } : null;
     msgs.push(an.blue ? 'Immeuble (rectangle ' + (an.blue.green ? 'vert' : 'bleu') + ') détecté.' : 'Aucun rectangle vert détecté : utilisez « Dessiner un immeuble ».');
+    if (NB.list.length) msgs.push(NB.list.length + ' construction(s) orange (clic droit pour leur hauteur).');
     msgs.push(an.red ? 'Segment rouge détecté (' + fmtNum(dist(an.red.p1, an.red.p2), 0) + ' px) : indiquez sa longueur réelle.' : 'Aucun segment rouge : utilisez « Tracer l\'échelle ».');
   }
-  fitView(); changed();
+  fitView(); if (S.view3d) fit3d(); changed();
   if (msgs.length) status(msgs.join(' '), true);
   if (!keep && an.red) { $('iScale').focus(); ocrScale(true); }
 }
@@ -648,15 +676,12 @@ function makeDemo() {
     [840, 260, 720, 240], [40, 610, 260, 450], [300, 610, 440, 450], [840, 610, 380, 220], [1220, 610, 340, 220], [840, 830, 720, 230]];
   x.font = '15px sans-serif';
   parcels.forEach(([a, b, w, h], i) => { x.strokeRect(a, b, w, h); x.fillStyle = '#333'; x.fillText(String(120 + i), a + w / 2 - 12, b + h / 2 + 5); });
-  // bâtiments existants (hachures)
+  // bâtiments existants (aplats orange, dont deux mitoyens séparés par un trait)
   const blds = [[70, 70, 180, 110], [430, 90, 150, 140], [90, 320, 120, 150], [880, 80, 140, 120], [1260, 70, 160, 140], [900, 300, 260, 120],
     [330, 660, 160, 120], [890, 650, 150, 140], [1280, 650, 200, 120], [900, 880, 220, 130]];
-  for (const [a, b, w, h] of blds) {
-    x.save(); x.beginPath(); x.rect(a, b, w, h); x.clip();
-    x.fillStyle = '#f3dede'; x.fill(); x.strokeStyle = '#b77'; x.lineWidth = 1;
-    for (let k = -h; k < w; k += 9) { x.beginPath(); x.moveTo(a + k, b + h); x.lineTo(a + k + h, b); x.stroke(); }
-    x.restore(); x.strokeStyle = '#222'; x.lineWidth = 1.5; x.strokeRect(a, b, w, h);
-  }
+  for (const [a, b, w, h] of blds) { x.fillStyle = '#fdc932'; x.fillRect(a, b, w, h); x.strokeStyle = '#222'; x.lineWidth = 1.5; x.strokeRect(a, b, w, h); }
+  x.beginPath(); x.moveTo(1030, 300); x.lineTo(1030, 420); x.stroke();
+  x.fillStyle = '#ffe3a6'; x.fillRect(1100, 450, 50, 35); x.strokeRect(1100, 450, 50, 35);
   // projet : rectangle vert
   x.save(); x.translate(560, 820); x.rotate(-12 * D2R); x.strokeStyle = '#00b050'; x.lineWidth = 4; x.strokeRect(-110, -60, 220, 120); x.restore();
   // échelle : segment rouge de 20 m = 200 px
@@ -668,12 +693,12 @@ function makeDemo() {
 }
 
 /* ------------------------------------------------------------- Rendu */
-const cv = $('cv'), cctx = cv.getContext('2d');
+const cv = $('cv'), cctx = cv.getContext('2d'), glcv = $('gl'), ovcv = $('ov'), octx = ovcv.getContext('2d');
 let CW = 0, CH = 0, DPR = 1;
 function resizeCanvas() {
   const r = $('stage').getBoundingClientRect(); DPR = window.devicePixelRatio || 1;
   CW = Math.max(10, r.width); CH = Math.max(10, r.height);
-  cv.width = Math.round(CW * DPR); cv.height = Math.round(CH * DPR); S.dirty = true;
+  cv.width = glcv.width = ovcv.width = Math.round(CW * DPR); cv.height = glcv.height = ovcv.height = Math.round(CH * DPR); S.dirty = true;
 }
 function fitView() {
   if (!S.clean) return;
@@ -762,6 +787,14 @@ function render(ctx, W, H, v, opt = {}) {
   const P = new Placer(W, H);
   P.add({ x: W - 96, y: 0, w: 96, h: 116 });     // rose des vents
   P.add({ x: 0, y: H - 46, w: 210, h: 46 });     // échelle graphique
+  if (NB) {   // hauteurs des constructions voisines
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    for (const c of NB.list) if (c.h !== undefined) {
+      const q = toS({ x: c.lx, y: c.ly }, v); if (q.x < -40 || q.y < -20 || q.x > W + 40 || q.y > H + 20) continue;
+      const t = fmtLen(c.h) + ' m', w = ctx.measureText(t).width + 10, rc = { x: q.x - w / 2, y: q.y - 9, w, h: 18 };
+      P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
+    }
+  }
   let bS = null;
   if (b) {
     bS = corners(b).map(p => toS(p, v));
@@ -922,7 +955,7 @@ function render(ctx, W, H, v, opt = {}) {
     ctx.setLineDash([]);
   }
 }
-function draw() { render(cctx, CW, CH, V, { k: DPR }); }
+function draw() { if (S.view3d) draw3d(); else render(cctx, CW, CH, V, { k: DPR }); }
 
 /* ------------------------------------------------------- Interaction plan */
 function handles(v = V) {
@@ -964,7 +997,12 @@ cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
   const p = evPos(e), w = toW(p);
   const pan = () => { drag = { type: 'pan', sx: p.x, sy: p.y, ox: V.ox, oy: V.oy }; cv.style.cursor = 'grabbing'; };
-  if (e.button === 1 || e.button === 2) return pan();
+  if (e.button === 1 || e.button === 2) { pan(); drag.btn = e.button; return; }
+  if (e.button === 0 && e.shiftKey && S.mode === 'select' && !(hitTest(p) || {}).hx && (hitTest(p) || {}).kind !== 'rot') {
+    // Maj + glisser : passage en 3D et rotation de la vue
+    if (enter3D()) { cv.releasePointerCapture(e.pointerId); glcv.setPointerCapture(e.pointerId); startOrbit(e); }
+    return;
+  }
   if (S.mode === 'scale') {
     if (!S.temp) S.temp = { type: 'scale', p1: w, p2: w };
     else { S.temp.p2 = w; finishScale(); }
@@ -992,7 +1030,7 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const p = evPos(e), w = toW(p);
   if (S.temp && !drag && S.mode === 'scale') { S.temp.p2 = w; S.dirty = true; }
-  if (!drag) { if (S.clean) cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? cursorFor(hitTest(p)) : 'crosshair'; return; }
+  if (!drag) { if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
   const b = S.building;
   switch (drag.type) {
     case 'pan': V.ox = drag.ox + p.x - drag.sx; V.oy = drag.oy + p.y - drag.sy; break;
@@ -1016,6 +1054,13 @@ cv.addEventListener('pointermove', e => {
 });
 cv.addEventListener('pointerup', e => {
   if (!drag) return;
+  if (drag.type === 'pan' && drag.btn === 2) {   // clic droit sans glisser : hauteur
+    const p = evPos(e);
+    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 4) {
+      const w = toW(p), h = S.building && hitTest(p), c = nbAt(w.x, w.y);
+      heightPopupFor(h && h.kind === 'move' ? { kind: 'proj' } : c ? { kind: 'nb', c } : null, e.clientX, e.clientY);
+    }
+  }
   if (drag.type === 'draw') {
     const { p1, p2 } = S.temp; S.temp = null;
     if (Math.abs(p2.x - p1.x) * V.s > 5 && Math.abs(p2.y - p1.y) * V.s > 5) {
@@ -1052,14 +1097,14 @@ function setMode(m) {
 
 /* ------------------------------------------------- Contrôles du panneau */
 function normWheel(e) { let d = e.deltaY || e.deltaX; if (e.deltaMode === 1) d *= 33; else if (e.deltaMode === 2) d *= 400; return d; }
-function attachScrub(el, stepFn, dragEl) {
+function attachScrub(el, stepFn, dragEl, noDrag) {
   let acc = 0;
   el.addEventListener('wheel', e => {
     e.preventDefault(); const d = normWheel(e);
     if (Math.abs(d) >= 50) { acc = 0; stepFn(d < 0 ? 1 : -1, e); return; }   // un cran de molette = un pas
     acc -= d; const n = Math.trunc(acc / 60); if (n) { acc -= n * 60; stepFn(clamp(n, -5, 5), e); }   // pavé tactile
   }, { passive: false });
-  for (const t of dragEl ? [el, dragEl] : [el]) {
+  for (const t of noDrag ? [] : dragEl ? [el, dragEl] : [el]) {
     if (t.tagName === 'INPUT') continue;
     t.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
@@ -1086,6 +1131,7 @@ function numField(id, o) {
 const B = () => S.building;
 numField('iH', { get: () => S.height, set: v => S.height = v, step: 1, fine: 0.1, dec: 1, min: 0, max: 1000 });
 numField('iDz', { get: () => S.dz, set: v => S.dz = v, step: 0.5, fine: 0.1, dec: 2, min: -200, max: 200 });
+numField('iDefH', { get: () => S.defH, set: v => { S.defH = v; S.hVer++; }, step: 0.5, fine: 0.1, dec: 2, min: 0, max: 500 });
 numField('iW', { get: () => B().w / pxPerM(), set: v => B().w = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iL', { get: () => B().l / pxPerM(), set: v => B().l = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iA', { get: () => B().a * R2D, set: v => B().a = mod(v + 180, 360) * D2R - Math.PI, step: 1, fine: 0.1, dec: 1, enabled: B });
@@ -1158,11 +1204,12 @@ $('btnScale').onclick = () => { if (!S.clean) return; setMode(S.mode === 'scale'
 $('btnOcr').onclick = () => ocrScale(false);
 $('btnScaleClear').onclick = () => { if (!S.scale) return; if (S.mode === 'scale') setMode('select'); S.scale = null; changed(); status('Échelle effacée. Utilisez « Tracer l\'échelle » pour en définir une nouvelle.', true); };
 $('btnTraj').onclick = () => { if (!S.building) return alert('Aucun immeuble sur le plan.'); setMode(S.mode === 'traj' ? 'select' : 'traj'); };
+$('btnNbClear').onclick = () => { if (!NB || !NB.list.some(c => c.h !== undefined) || !confirm('Effacer toutes les hauteurs des constructions voisines ?')) return; NB.list.forEach(c => delete c.h); S.hVer++; changed(); };
 $('btnTrajClear').onclick = () => { S.traj = []; changed(); };
 $('mSelect').onclick = () => setMode('select');
 $('mTraj').onclick = () => $('btnTraj').onclick();
 $('mScale').onclick = () => $('btnScale').onclick();
-$('btnFit').onclick = fitView;
+$('btnFit').onclick = () => S.view3d ? fit3d() : fitView();
 
 // scénario
 function addScen(day, minute, solar) {
@@ -1236,6 +1283,8 @@ function syncUI() {
   $('tzInfo').textContent = S.utcMode ? 'temps universel' : 'UTC' + (off >= 0 ? '+' : '−') + fmtNum(Math.abs(off), off % 1 ? 1 : 0).replace(/,0$/, '') + (S.dstAuto && off !== S.tzStd ? ' (heure d\'été)' : S.dstAuto ? ' (heure d\'hiver)' : '');
   $('cDst').checked = S.dstAuto; $('cSolar').checked = S.solarPresets; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
   $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('rOpa').value = S.opacity;
+  { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
+    $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
   $('levels').textContent = '≈ R+' + Math.max(0, Math.round(S.height / 3) - 1);
   const bb = S.building, ppm = pxPerM();
   $('footprint').innerHTML = bb ? fmtNum(bb.w * bb.l / (ppm * ppm), 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' m²' + (scaleOk() ? '' : ' <span class="warn">(échelle ?)</span>') : '—';
@@ -1308,23 +1357,35 @@ async function saveBlob(blob, name, desc, mime, ext) {
   status('Fichier téléchargé : ' + name, true);
 }
 const canvasBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
+$('btnSaveProj').title = 'Enregistre le plan et tous les réglages (vue 2D/3D, hauteurs des constructions, lieu, scénarios…) pour les rouvrir plus tard';
 $('btnSaveProj').onclick = async () => {
   if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
   const p = {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL,
     building: S.building, height: S.height, dz: S.dz, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner }) => ({ u, v, corner })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims,
+    solarPresets: S.solarPresets, defH: S.defH, nbHeights: savedHeights(),
+    view: { view3d: S.view3d, v2: { cx: (CW / 2 - V.ox) / V.s, cy: (CH / 2 - V.oy) / V.s, s: V.s }, cam: G.camSet ? { ...G.cam } : null }
   };
   await saveBlob(new Blob([JSON.stringify(p)], { type: 'application/json' }), S.fileName + '.ombre.json', 'Projet Ombre portée', 'application/json', '.json');
 };
 async function loadProject(p) {
   if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
   const c = imgToCanvas(await loadImg(p.image));
-  for (const k of ['building', 'height', 'dz', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims'])
     if (p[k] !== undefined) S[k] = p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
+  S.pendingHeights = p.nbHeights || null;
   setImage(c, p.image, p.fileName, true);
+  const vw = p.view;
+  if (vw) {
+    if (vw.v2) { V.s = vw.v2.s; V.ox = CW / 2 - vw.v2.cx * vw.v2.s; V.oy = CH / 2 - vw.v2.cy * vw.v2.s; }
+    if (vw.cam) { Object.assign(G.cam, vw.cam); G.camSet = true; }
+    if (vw.view3d && initGL()) { S.view3d = false; enter3D(); if (vw.cam) Object.assign(G.cam, vw.cam); }
+    else if (!vw.view3d) exit3D();
+    changed();
+  }
   status('Projet « ' + (p.fileName || '') + ' » ouvert.', true);
 }
 $('btnSavePlan').onclick = async () => {
@@ -1338,6 +1399,7 @@ $('btnSavePlan').onclick = async () => {
   await saveBlob(await canvasBlob(c), S.fileName + '_modifie.png', 'Image PNG', 'image/png', '.png');
 };
 function snapshot(k = 2) {
+  if (S.view3d) return snapshot3d();
   const c = document.createElement('canvas'); c.width = Math.round(CW * k); c.height = Math.round(CH * k);
   render(c.getContext('2d'), CW, CH, V, { k, print: true }); return c;
 }
@@ -1375,6 +1437,569 @@ $('btnDemo').onclick = () => {
 };
 document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('drop', e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) openFile(f); });
+
+/* ------------------------------------- Constructions voisines (zones orange) */
+// NB = { f, W, H, ids, list, ver } : ids = carte des constructions (résolution d'analyse = f × celle du plan)
+let NB = null, nbVer = 0;
+function boxDilate(m, W, H, r) {
+  const t = new Uint8Array(W * H), o = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    const row = y * W; let c = 0;
+    for (let x = 0; x < Math.min(r, W); x++) c += m[row + x];
+    for (let x = 0; x < W; x++) { if (x + r < W) c += m[row + x + r]; if (x - r - 1 >= 0) c -= m[row + x - r - 1]; t[row + x] = c > 0 ? 1 : 0; }
+  }
+  for (let x = 0; x < W; x++) {
+    let c = 0;
+    for (let y = 0; y < Math.min(r, H); y++) c += t[y * W + x];
+    for (let y = 0; y < H; y++) { if (y + r < H) c += t[(y + r) * W + x]; if (y - r - 1 >= 0) c -= t[(y - r - 1) * W + x]; o[y * W + x] = c > 0 ? 1 : 0; }
+  }
+  return o;
+}
+function simplifyLoop(flat, eps) {
+  const P = []; for (let i = 0; i < flat.length; i += 2) P.push({ x: flat[i], y: flat[i + 1] });
+  const n = P.length, Q = [];
+  for (let i = 0; i < n; i++) {   // retire les points alignés
+    const a = P[(i + n - 1) % n], b = P[i], c = P[(i + 1) % n];
+    if ((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x) !== 0) Q.push(b);
+  }
+  if (Q.length < 4) return Q;
+  let far = 0, fd = -1;
+  for (let i = 1; i < Q.length; i++) { const d = (Q[i].x - Q[0].x) ** 2 + (Q[i].y - Q[0].y) ** 2; if (d > fd) { fd = d; far = i; } }
+  const R = Q.concat([Q[0]]), keep = new Uint8Array(R.length);
+  keep[0] = keep[far] = keep[R.length - 1] = 1;
+  const st = [[0, far], [far, R.length - 1]];
+  while (st.length) {   // Douglas-Peucker
+    const [a, b] = st.pop(); if (b - a < 2) continue;
+    const A = R[a], B = R[b], dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1;
+    let k = -1, md = eps;
+    for (let i = a + 1; i < b; i++) { const d = Math.abs((R[i].x - A.x) * dy - (R[i].y - A.y) * dx) / L; if (d > md) { md = d; k = i; } }
+    if (k >= 0) { keep[k] = 1; st.push([a, k], [k, b]); }
+  }
+  return R.filter((p, i) => keep[i] && i < R.length - 1);
+}
+/** Repère les constructions (aplats orange ou jaunes), réunies même si un trait noir les traverse. */
+function detectNeighbors(canvas) {
+  const f = Math.min(1, 4096 / Math.max(canvas.width, canvas.height));
+  const W = Math.max(1, Math.round(canvas.width * f)), H = Math.max(1, Math.round(canvas.height * f)), N = W * H;
+  let src = canvas;
+  if (f < 1) { src = document.createElement('canvas'); src.width = W; src.height = H; const x = src.getContext('2d'); x.imageSmoothingEnabled = false; x.drawImage(canvas, 0, 0, W, H); }
+  const d = src.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+  const m = new Uint8Array(N), dark = new Uint8Array(N);
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    const r = d[p], g = d[p + 1], b = d[p + 2];
+    if (r > 190 && g > 120 && r - b > 70 && r - g >= 12 && r - g <= 125) m[i] = 1;
+    else if (0.3 * r + 0.59 * g + 0.11 * b < 200) dark[i] = 1;   // traits, texte
+  }
+  // fermeture morphologique, limitée aux pixels sombres : les traits noirs internes sont absorbés
+  const R = Math.max(2, Math.round(Math.max(W, H) / 1000));
+  const inv = a => { const o = new Uint8Array(N); for (let i = 0; i < N; i++) o[i] = 1 - a[i]; return o; };
+  const closed = inv(boxDilate(inv(boxDilate(m, W, H, R)), W, H, R));
+  for (let i = 0; i < N; i++) if (!m[i] && closed[i] && dark[i]) m[i] = 1;
+  // composantes (4-connexité) : > 0 construction, < 0 fond
+  const lab = new Int32Array(N), st = new Int32Array(N), size = [0], bg = [null];
+  let nc = 0, nb = 0;
+  for (let pass = 1; pass >= 0; pass--) for (let i = 0; i < N; i++) {   // constructions d'abord, puis le fond
+    if (lab[i] || m[i] !== pass) continue;
+    const v = pass;
+    let id, sp = 0, n = 0, border = false, adj = 0;
+    if (v) id = ++nc; else id = -(++nb);
+    lab[i] = id; st[sp++] = i;
+    while (sp) {
+      const j = st[--sp], x = j % W; n++;
+      if (x === 0 || x === W - 1 || j < W || j >= N - W) border = true;
+      const nbs = [x > 0 ? j - 1 : -1, x < W - 1 ? j + 1 : -1, j >= W ? j - W : -1, j < N - W ? j + W : -1];
+      for (const k of nbs) {
+        if (k < 0) continue;
+        if (m[k] === v) { if (!lab[k]) { lab[k] = id; st[sp++] = k; } }
+        else if (!v && lab[k] > 0) adj = adj === 0 ? lab[k] : adj === lab[k] ? adj : -1;
+      }
+    }
+    if (v) size.push(n); else bg.push({ n, border, adj });
+  }
+  // petits trous (texte, numéros) rebouchés ; les grandes cours restent ouvertes
+  for (let k = 1; k <= nb; k++) { const b = bg[k]; if (!b.border && b.adj > 0 && b.n < 0.2 * size[b.adj]) size[b.adj] += b.n; else b.adj = 0; }
+  const minA = Math.max(40, N * 4e-6), newId = new Int32Array(nc + 1), list = [];
+  for (let k = 1; k <= nc; k++) if (size[k] >= minA) { list.push({ n: size[k] }); newId[k] = list.length; }
+  for (let i = 0; i < N; i++) { const l = lab[i]; lab[i] = l > 0 ? newId[l] : (bg[-l].adj ? newId[bg[-l].adj] : 0); }
+  const ids = lab;
+  // point d'étiquette (centre « le plus intérieur », transformée de distance) et contours
+  const dt = new Float32Array(N);
+  for (const c of list) { c.x0 = 1e9; c.y0 = 1e9; c.x1 = -1; c.y1 = -1; c.best = -1; c.bi = 0; c.e = []; }
+  for (let i = 0; i < N; i++) {
+    const k = ids[i]; if (!k) continue;
+    const x = i % W, y = (i - x) / W, c = list[k - 1];
+    if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+    const L = x === 0 || ids[i - 1] !== k, Rr = x === W - 1 || ids[i + 1] !== k, T = y === 0 || ids[i - W] !== k, B = y === H - 1 || ids[i + W] !== k;
+    dt[i] = L || Rr || T || B ? 1 : 1e9;
+    // arêtes orientées : l'extérieur est à droite du sens de parcours
+    if (Rr) c.e.push(x + 1, y + 1, x + 1, y);
+    if (L) c.e.push(x, y, x, y + 1);
+    if (T) c.e.push(x + 1, y, x, y);
+    if (B) c.e.push(x, y + 1, x + 1, y + 1);
+  }
+  const relax = (i, j, w) => { if (ids[j] === ids[i] && dt[j] + w < dt[i]) dt[i] = dt[j] + w; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x; if (!ids[i] || dt[i] === 1) continue;
+    if (x > 0) relax(i, i - 1, 1); if (y > 0) { relax(i, i - W, 1); if (x > 0) relax(i, i - W - 1, 1.414); if (x < W - 1) relax(i, i - W + 1, 1.414); }
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+    const i = y * W + x; if (!ids[i]) continue;
+    if (dt[i] !== 1) { if (x < W - 1) relax(i, i + 1, 1); if (y < H - 1) { relax(i, i + W, 1); if (x < W - 1) relax(i, i + W + 1, 1.414); if (x > 0) relax(i, i + W - 1, 1.414); } }
+    const c = list[ids[i] - 1]; if (dt[i] > c.best) { c.best = dt[i]; c.bi = i; }
+  }
+  const VW = W + 1;
+  list.forEach((c, q) => {
+    const E = c.e, ne = E.length / 4, starts = new Map(), used = new Uint8Array(ne), loops = [];
+    for (let k = 0; k < ne; k++) { const key = E[k * 4 + 1] * VW + E[k * 4]; const a = starts.get(key); if (a) a.push(k); else starts.set(key, [k]); }
+    for (let k0 = 0; k0 < ne; k0++) {
+      if (used[k0]) continue;
+      const pts = []; let k = k0;
+      while (k >= 0 && !used[k]) {
+        used[k] = 1; pts.push(E[k * 4], E[k * 4 + 1]);
+        const a = starts.get(E[k * 4 + 3] * VW + E[k * 4 + 2]); k = -1;
+        if (a) for (const z of a) if (!used[z]) { k = z; break; }
+      }
+      if (pts.length >= 8) { const lp = simplifyLoop(pts, 0.75); if (lp.length >= 3) loops.push(lp.map(p => ({ x: p.x / f, y: p.y / f }))); }
+    }
+    const bx = c.bi % W, by = (c.bi - bx) / W;
+    list[q] = { id: q + 1, n: c.n, x0: c.x0 / f, y0: c.y0 / f, x1: (c.x1 + 1) / f, y1: (c.y1 + 1) / f, lx: (bx + 0.5) / f, ly: (by + 0.5) / f, loops };
+  });
+  return { f, W, H, ids, list, ver: ++nbVer };
+}
+function nbAt(x, y) {
+  if (!NB) return null;
+  const ix = Math.floor(x * NB.f), iy = Math.floor(y * NB.f);
+  if (ix < 0 || iy < 0 || ix >= NB.W || iy >= NB.H) return null;
+  const id = NB.ids[iy * NB.W + ix]; return id ? NB.list[id - 1] : null;
+}
+const nbHeight = c => c.h !== undefined ? c.h : S.defH;
+/** Réapplique des hauteurs enregistrées ({x, y, h} = point d'étiquette) aux constructions détectées. */
+function applyHeights(arr) {
+  if (!NB || !arr) return;
+  for (const { x, y, h } of arr) {
+    let c = nbAt(x, y);
+    for (let r = 1; !c && r <= 6; r++) for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r]]) c = c || nbAt(x + dx, y + dy);
+    if (c) c.h = h;
+  }
+  S.hVer++;
+}
+const savedHeights = () => NB ? NB.list.filter(c => c.h !== undefined).map(c => ({ x: Math.round(c.lx * 10) / 10, y: Math.round(c.ly * 10) / 10, h: c.h })) : [];
+
+/* ------------------------------------------- Fenêtre de saisie de la hauteur */
+const hPop = $('hPop'); let popCtx = null;
+function openPop(cx, cy, o) {
+  popCtx = o; $('hPopT').textContent = o.title; $('hPopDel').hidden = !o.del;
+  hPop.hidden = false;
+  const r = hPop.getBoundingClientRect();
+  hPop.style.left = clamp(cx + 14, 4, innerWidth - r.width - 4) + 'px';
+  hPop.style.top = clamp(cy - 24, 4, innerHeight - r.height - 4) + 'px';
+  popShow(); $('hPopV').focus(); $('hPopV').select(); changed();
+}
+function popShow() { if (popCtx) $('hPopV').value = fmtLen(popCtx.get()); }
+function closePop() { hPop.hidden = true; popCtx = null; }
+attachScrub(hPop, (n, e) => {
+  if (!popCtx) return;
+  const st = e.shiftKey ? 0.1 : 0.5;
+  popCtx.set(clamp(Math.round((popCtx.get() + n * st) / st) * st, 0, 1000)); popShow(); changed();
+}, null, true);
+$('hPopV').addEventListener('input', e => { const v = parseNum(e.target.value); if (popCtx && isFinite(v) && v >= 0) { popCtx.set(Math.min(v, 1000)); changed(); } });
+$('hPopV').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') closePop(); e.stopPropagation(); });
+$('hPopOk').onclick = closePop;
+$('hPopDel').onclick = () => { if (popCtx && popCtx.del) popCtx.del(); closePop(); changed(); };
+document.addEventListener('pointerdown', e => { if (popCtx && !hPop.contains(e.target)) closePop(); }, true);
+/** Clic droit : hauteur de l'immeuble projeté ou d'une construction voisine. */
+function heightPopupFor(target, cx, cy) {
+  if (!target) return false;
+  if (target.kind === 'proj') {
+    openPop(cx, cy, { title: 'Hauteur de l\'immeuble projeté', get: () => S.height, set: v => S.height = v });
+  } else {
+    const c = target.c;
+    if (c.h === undefined) { c.h = S.defH > 0 ? S.defH : S.lastNbH; S.hVer++; }
+    openPop(cx, cy, { title: 'Hauteur de la construction', get: () => c.h, set: v => { c.h = v; S.lastNbH = v; S.hVer++; }, del: () => { delete c.h; S.hVer++; } });
+  }
+  return true;
+}
+
+/* ---------------------------------------------------------- Vue 3D (WebGL 2) */
+// Repère 3D : X = x du plan, Z = y du plan, Y = vertical (unité : pixel du plan)
+const G = { gl: null, cam: { tx: 0, tz: 0, yaw: 0, pitch: 0, dist: 1000 }, fov: 40 * D2R, nbKey: '', planSrc: null, idsVer: -1 };
+const v3 = {
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; }
+};
+function m4mul(a, b) { const o = new Float32Array(16); for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) { let s = 0; for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k]; o[c * 4 + r] = s; } return o; }
+function m4persp(fy, asp, n, f) { const t = 1 / Math.tan(fy / 2), o = new Float32Array(16); o[0] = t / asp; o[5] = t; o[10] = (f + n) / (n - f); o[11] = -1; o[14] = 2 * f * n / (n - f); return o; }
+function m4ortho(l, r, b, t, n, f) { const o = new Float32Array(16); o[0] = 2 / (r - l); o[5] = 2 / (t - b); o[10] = -2 / (f - n); o[12] = -(r + l) / (r - l); o[13] = -(t + b) / (t - b); o[14] = -(f + n) / (f - n); o[15] = 1; return o; }
+function m4look(e, c, u) {
+  const z = v3.norm(v3.sub(e, c)), x = v3.norm(v3.cross(u, z)), y = v3.cross(z, x);
+  return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -v3.dot(x, e), -v3.dot(y, e), -v3.dot(z, e), 1]);
+}
+const m4pt = (M, p) => [M[0] * p[0] + M[4] * p[1] + M[8] * p[2] + M[12], M[1] * p[0] + M[5] * p[1] + M[9] * p[2] + M[13], M[2] * p[0] + M[6] * p[1] + M[10] * p[2] + M[14], M[3] * p[0] + M[7] * p[1] + M[11] * p[2] + M[15]];
+
+const GLSL_ID = `
+uniform sampler2D uIds; uniform float uIdScale;
+float idAt(vec2 p) {
+  ivec2 sz = textureSize(uIds, 0);
+  ivec2 c = clamp(ivec2(floor(p * uIdScale)), ivec2(0), sz - 1);
+  vec4 t = texelFetch(uIds, c, 0);
+  return floor(t.r * 255.0 + 0.5) + floor(t.g * 255.0 + 0.5) * 256.0 + floor(t.b * 255.0 + 0.5) * 65536.0;
+}`;
+const VS_MAIN = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNor; layout(location=2) in vec4 aCol; layout(location=3) in float aId;
+uniform mat4 uVP; uniform mat4 uLVP; uniform float uNOff;
+out vec3 vPos; out vec3 vNor; out vec4 vCol; out float vId; out vec4 vL;
+void main() { vPos = aPos; vNor = aNor; vCol = aCol; vId = aId; vL = uLVP * vec4(aPos + aNor * uNOff, 1.0); gl_Position = uVP * vec4(aPos, 1.0); }`;
+const FS_MAIN = `#version 300 es
+precision highp float; precision highp sampler2DShadow;
+uniform sampler2D uPlan; uniform sampler2DShadow uShadow;
+uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel;
+in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL;
+out vec4 oCol;
+${GLSL_ID}
+float lit() {
+  if (uSunUp < 0.5) return 0.0;
+  vec3 p = vL.xyz / vL.w * 0.5 + 0.5;
+  if (p.x <= 0.0 || p.x >= 1.0 || p.y <= 0.0 || p.y >= 1.0 || p.z >= 1.0) return 1.0;
+  float s = 0.0;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) s += texture(uShadow, vec3(p.xy + vec2(float(i), float(j)) * uTexel, p.z - 0.0003));
+  return s / 9.0;
+}
+void main() {
+  if (vId > 0.5 && abs(idAt(vPos.xz) - vId) > 0.5) discard;
+  vec3 n = normalize(vNor);
+  float nd = dot(n, uSun), l = nd > 0.0 ? lit() : 0.0, k;
+  vec3 base = vCol.a < 0.5 ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
+  if (n.y > 0.5) k = mix(0.6, 1.0, l);                    // sol et toits
+  else k = 0.5 + 0.5 * l * (0.35 + 0.65 * max(nd, 0.0));  // murs
+  oCol = vec4(base * k, 1.0);
+}`;
+const VS_DEPTH = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=3) in float aId;
+uniform mat4 uLVP; out vec3 vPos; out float vId;
+void main() { vPos = aPos; vId = aId; gl_Position = uLVP * vec4(aPos, 1.0); }`;
+const FS_DEPTH = `#version 300 es
+precision highp float;
+in vec3 vPos; in float vId; out vec4 o;
+${GLSL_ID}
+void main() { if (vId > 0.5 && abs(idAt(vPos.xz) - vId) > 0.5) discard; o = vec4(1.0); }`;
+
+function glProgram(gl, vs, fs) {
+  const mk = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const p = gl.createProgram(); gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}, n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+function initGL() {
+  if (G.gl) return true;
+  try {
+    const gl = glcv.getContext('webgl2', { antialias: true });
+    if (!gl) throw new Error('WebGL 2 non disponible dans ce navigateur');
+    G.gl = gl;
+    G.main = glProgram(gl, VS_MAIN, FS_MAIN); G.depth = glProgram(gl, VS_DEPTH, FS_DEPTH);
+    G.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
+    G.sm = Math.min(4096, G.maxTex);
+    G.shadowTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, G.sm, G.sm);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
+      [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE], [gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    G.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shadowTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    G.planTex = gl.createTexture(); G.idsTex = gl.createTexture();
+    G.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
+    G.bufs = {};
+    return true;
+  } catch (e) {
+    console.error(e); G.gl = null;
+    alert('La vue 3D n\'est pas disponible : ' + e.message); return false;
+  }
+}
+function uploadTextures() {
+  const gl = G.gl;
+  if (G.planSrc !== S.clean) {
+    G.planSrc = S.clean;
+    let src = S.clean; const k = Math.min(1, G.maxTex / Math.max(src.width, src.height));
+    if (k < 1) { const c = document.createElement('canvas'); c.width = Math.floor(src.width * k); c.height = Math.floor(src.height * k); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); src = c; }
+    gl.bindTexture(gl.TEXTURE_2D, G.planTex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (G.aniso) gl.texParameterf(gl.TEXTURE_2D, G.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+  }
+  const ver = NB ? NB.ver : 0;
+  if (G.idsVer !== ver) {
+    G.idsVer = ver;
+    gl.bindTexture(gl.TEXTURE_2D, G.idsTex);
+    let w = 1, h = 1, data = new Uint8Array(4);
+    if (NB) {
+      w = NB.W; h = NB.H; data = new Uint8Array(w * h * 4);
+      for (let i = 0; i < w * h; i++) { const id = NB.ids[i]; data[i * 4] = id & 255; data[i * 4 + 1] = id >> 8 & 255; data[i * 4 + 2] = id >> 16 & 255; data[i * 4 + 3] = 255; }
+    }
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  }
+}
+class Geo {
+  constructor() { this.a = []; }
+  v(p, n, c, id) { this.a.push(p[0], p[1], p[2], n[0], n[1], n[2], c[0], c[1], c[2], c[3], id); }
+  quad(p0, p1, p2, p3, n, c, id = 0) { this.v(p0, n, c, id); this.v(p1, n, c, id); this.v(p2, n, c, id); this.v(p0, n, c, id); this.v(p2, n, c, id); this.v(p3, n, c, id); }
+  /** Prisme droit sur un polygone convexe (coordonnées du plan), de y0 à y1. */
+  prism(pts, y0, y1, col, roof) {
+    let ar = 0; pts.forEach((p, i) => { const q = pts[(i + 1) % pts.length]; ar += p.x * q.y - q.x * p.y; });
+    const sg = ar > 0 ? 1 : -1;
+    pts.forEach((p, i) => {
+      const q = pts[(i + 1) % pts.length], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
+      const n = [-dy / L * sg, 0, dx / L * sg];
+      this.quad([p.x, y0, p.y], [q.x, y0, q.y], [q.x, y1, q.y], [p.x, y1, p.y], n, col);
+    });
+    if (roof) for (let i = 1; i < pts.length - 1; i++) { for (const p of [pts[0], pts[i], pts[i + 1]]) this.v([p.x, y1, p.y], [0, 1, 0], roof, 0); }
+  }
+}
+function setBuf(name, geo) {
+  const gl = G.gl; let b = G.bufs[name];
+  if (!b) b = G.bufs[name] = { buf: gl.createBuffer(), n: 0 };
+  gl.bindBuffer(gl.ARRAY_BUFFER, b.buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geo.a), gl.DYNAMIC_DRAW); b.n = geo.a.length / 11;
+}
+function drawBuf(name) {
+  const gl = G.gl, b = G.bufs[name]; if (!b || !b.n) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, b.buf);
+  [[0, 3, 0], [1, 3, 12], [2, 4, 24], [3, 1, 40]].forEach(([l, n, o]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, 44, o); });
+  gl.drawArrays(gl.TRIANGLES, 0, b.n);
+}
+const WALL = [0.93, 0.72, 0.43, 1], GREEN = [0.13, 0.64, 0.29, 1], GREEN_TOP = [0.25, 0.78, 0.4, 1], PLINTH = [0.66, 0.56, 0.45, 1];
+function buildNeighbors() {
+  const ppm = pxPerM(), key = [NB ? NB.ver : 0, S.hVer, S.defH, ppm].join('|');
+  if (key === G.nbKey) return; G.nbKey = key;
+  const g = new Geo();
+  if (NB) for (const c of NB.list) {
+    const h = nbHeight(c) * ppm; if (h <= 0) continue;
+    for (const lp of c.loops) lp.forEach((p, i) => {
+      const q = lp[(i + 1) % lp.length], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
+      g.quad([p.x, 0, p.y], [q.x, 0, q.y], [q.x, h, q.y], [p.x, h, p.y], [-dy / L, 0, dx / L], WALL);
+    });
+    // toit : rectangle englobant, découpé au pixel près par la carte des constructions ; texture = plan
+    g.quad([c.x0, h, c.y0], [c.x1, h, c.y0], [c.x1, h, c.y1], [c.x0, h, c.y1], [0, 1, 0], [0, 0, 0, 0], c.id);
+  }
+  setBuf('nb', g);
+}
+function projTop() { return Math.max(0, S.dH + S.dz) * pxPerM(); }
+function buildProject() {
+  const g = new Geo(), b = S.building;
+  if (b) {
+    const ppm = pxPerM(), cs = corners(b), base = Math.max(0, S.dz) * ppm, top = projTop();
+    if (base > 0) g.prism(cs, 0, base, PLINTH, PLINTH);         // partie « niveau / terrain »
+    if (top > base) g.prism(cs, base, top, GREEN, GREEN_TOP);
+  }
+  setBuf('proj', g);
+  const gg = new Geo(), W = S.clean.width, H = S.clean.height;
+  gg.quad([0, 0, 0], [W, 0, 0], [W, 0, H], [0, 0, H], [0, 1, 0], [0, 0, 0, 0]);
+  setBuf('ground', gg);
+}
+function camInfo(cw = CW, ch = CH) {
+  const c = G.cam, g = [Math.sin(c.yaw), 0, -Math.cos(c.yaw)], cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
+  const target = [c.tx, 0, c.tz], eye = [c.tx - c.dist * sp * g[0], c.dist * cp, c.tz - c.dist * sp * g[2]], up = [cp * g[0], sp, cp * g[2]];
+  const ext = Math.max(S.clean ? Math.max(S.clean.width, S.clean.height) : 1000, 1);
+  const VP = m4mul(m4persp(G.fov, cw / ch, Math.max(0.5, c.dist * 0.01), c.dist * 8 + ext * 4), m4look(eye, target, up));
+  return { eye, target, up, VP };
+}
+function sunVec(sun) {
+  const { N, E } = northVecs(), a = sun.az * D2R, h = sun.alt * D2R;
+  const dx = N.x * Math.cos(a) + E.x * Math.sin(a), dy = N.y * Math.cos(a) + E.y * Math.sin(a);
+  return v3.norm([dx * Math.cos(h), Math.sin(h), dy * Math.cos(h)]);
+}
+function maxSceneH() {
+  let m = projTop(); const ppm = pxPerM();
+  if (NB) for (const c of NB.list) m = Math.max(m, nbHeight(c) * ppm);
+  return m;
+}
+function draw3d() {
+  if (!G.gl || !S.clean) return;
+  const gl = G.gl, W = S.clean.width, H = S.clean.height;
+  uploadTextures(); buildNeighbors(); buildProject();
+  const sun = curSun(), up = sun.alt > 0.05, L = up ? sunVec(sun) : [0, 1, 0];
+  // matrice de la lumière (projection orthogonale englobant la scène)
+  const ctr = [W / 2, 0, H / 2], R = Math.hypot(W, H), mh = maxSceneH() + 1;
+  const lv = m4look(v3.add(ctr, v3.mul(L, R)), ctr, Math.abs(L[1]) > 0.99 ? [0, 0, -1] : [0, 1, 0]);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const X of [0, W]) for (const Y of [0, mh]) for (const Z of [0, H]) {
+    const p = m4pt(lv, [X, Y, Z]); x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
+  }
+  const LVP = m4mul(m4ortho(x0, x1, y0, y1, -z1 - 10, -z0 + 10), lv);
+  gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
+  // passe 1 : carte d'ombre
+  gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo); gl.viewport(0, 0, G.sm, G.sm);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(G.depth.p);
+  gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVP);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.idsTex);
+  gl.uniform1i(G.depth.u.uIds, 1); gl.uniform1f(G.depth.u.uIdScale, NB ? NB.f : 1);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3);
+  drawBuf('nb'); drawBuf('proj');
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+  // passe 2 : rendu
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, glcv.width, glcv.height);
+  gl.clearColor(0.80, 0.84, 0.89, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const ci = camInfo(), m = G.main;
+  gl.useProgram(m.p);
+  gl.uniformMatrix4fv(m.u.uVP, false, ci.VP); gl.uniformMatrix4fv(m.u.uLVP, false, LVP);
+  gl.uniform1f(m.u.uNOff, (x1 - x0) / G.sm * 1.5);
+  gl.uniform2f(m.u.uPlanSize, W, H); gl.uniform3fv(m.u.uSun, L); gl.uniform1f(m.u.uSunUp, up ? 1 : 0); gl.uniform1f(m.u.uTexel, 1 / G.sm);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.planTex); gl.uniform1i(m.u.uPlan, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.idsTex); gl.uniform1i(m.u.uIds, 1); gl.uniform1f(m.u.uIdScale, NB ? NB.f : 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex); gl.uniform1i(m.u.uShadow, 2);
+  drawBuf('ground'); drawBuf('nb'); drawBuf('proj');
+  overlay3d(ci, sun);
+}
+function toScreen3(VP, p, cw = CW, ch = CH) {
+  const c = m4pt(VP, p); if (c[3] <= 1e-6) return null;
+  return { x: (c[0] / c[3] * 0.5 + 0.5) * cw, y: (0.5 - c[1] / c[3] * 0.5) * ch };
+}
+function overlay3d(ci, sun, ctx = octx, k = DPR) {
+  ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, CW, CH);
+  const ppm = pxPerM(), P = new Placer(CW, CH);
+  P.add({ x: CW - 96, y: 0, w: 96, h: 116 });
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  if (NB) for (const c of NB.list) if (c.h !== undefined) {
+    const q = toScreen3(ci.VP, [c.lx, c.h * ppm, c.ly]); if (!q || q.x < -50 || q.y < -20 || q.x > CW + 50 || q.y > CH + 20) continue;
+    const t = fmtLen(c.h) + ' m', w = ctx.measureText(t).width + 10, rc = { x: q.x - w / 2, y: q.y - 9, w, h: 18 };
+    P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
+  }
+  const b = S.building;
+  if (b) {
+    const q = toScreen3(ci.VP, [b.cx, projTop(), b.cy]);
+    if (q) {
+      const t = 'H ' + fmtLen(S.dH) + ' m' + (S.dz ? ' (' + (S.dz > 0 ? '+' : '−') + fmtLen(Math.abs(S.dz)) + ')' : ''), w = ctx.measureText(t).width + 10;
+      drawLabel(ctx, P.place(q.x, q.y, w, 18, -Math.PI / 2), t, BLD_DARK, q);
+    }
+  }
+  // rose des vents (nord projeté à l'écran)
+  const cx = CW - 50, cy = 52, R = 34, o = toScreen3(ci.VP, ci.target);
+  const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, 0, ci.target[2] + N.y * G.cam.dist * 0.1]);
+  let nx = 0, ny = -1; if (o && nq) { const l = Math.hypot(nq.x - o.x, nq.y - o.y); if (l > 1e-6) { nx = (nq.x - o.x) / l; ny = (nq.y - o.y) / l; } }
+  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = '#99a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.stroke();
+  for (const [s, col] of [[1, '#c00'], [-1, '#555']]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx + s * nx * (R - 6), cy + s * ny * (R - 6)); ctx.lineTo(cx - ny * 6, cy + nx * 6); ctx.lineTo(cx + ny * 6, cy - nx * 6); ctx.closePath(); ctx.fill();
+  }
+  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c00';
+  ctx.fillText('N', cx + nx * (R + 9), cy + ny * (R + 9));
+  ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx - 4, cy + R + 22);
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, CH - 26, 330, 20); ctx.fillStyle = '#334';
+  ctx.fillText('Vue 3D — Maj + glisser : pivoter / incliner', 12, CH - 16);
+}
+/** Rayon issu d'un point de l'écran. */
+function ray3(sx, sy) {
+  const ci = camInfo(), f = v3.norm(v3.sub(ci.target, ci.eye)), r = v3.norm(v3.cross(f, ci.up)), u = v3.cross(r, f), t = Math.tan(G.fov / 2);
+  const nx = 2 * sx / CW - 1, ny = 1 - 2 * sy / CH;
+  return { o: ci.eye, d: v3.norm(v3.add(f, v3.add(v3.mul(r, nx * t * CW / CH), v3.mul(u, ny * t)))) };
+}
+function ground3(sx, sy) { const { o, d } = ray3(sx, sy); if (d[1] > -1e-4) return null; const t = -o[1] / d[1]; return [o[0] + d[0] * t, 0, o[2] + d[2] * t]; }
+/** Ce que l'on vise : l'immeuble projeté ou une construction voisine (marche le long du rayon). */
+function pick3(sx, sy) {
+  const { o, d } = ray3(sx, sy); if (d[1] > -1e-4) return null;
+  const ppm = pxPerM(), mh = maxSceneH() + 1, b = S.building, top = projTop();
+  const t0 = Math.max(0, (o[1] - mh) / -d[1]), t1 = o[1] / -d[1], step = Math.max(0.5, (t1 - t0) / 20000);
+  for (let t = t0; t <= t1 + step; t += step) {
+    const x = o[0] + d[0] * t, y = Math.max(0, o[1] + d[1] * t), z = o[2] + d[2] * t;
+    if (b && y <= top) { const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj' }; }
+    const c = nbAt(x, z); if (c && y <= nbHeight(c) * ppm + 0.5) return { kind: 'nb', c };
+  }
+  return null;
+}
+function enter3D() {
+  if (S.view3d) return true;
+  if (!S.clean || !initGL()) return false;
+  if (S.mode !== 'select') setMode('select');
+  const c = toW({ x: CW / 2, y: CH / 2 });
+  Object.assign(G.cam, { tx: c.x, tz: c.y, dist: (CH / V.s) / 2 / Math.tan(G.fov / 2) });
+  if (!G.camSet) { G.cam.yaw = 0; G.cam.pitch = 0; }
+  G.camSet = true;
+  setView3d(true);
+  status('Vue 3D : Maj + glisser = pivoter / incliner · glisser = déplacer la vue ou l\'immeuble · molette = zoom · clic droit = hauteur d\'une construction.', true);
+  return true;
+}
+function exit3D() {
+  if (!S.view3d) return;
+  const s = CH / (2 * G.cam.dist * Math.tan(G.fov / 2));
+  V.s = s; V.ox = CW / 2 - G.cam.tx * s; V.oy = CH / 2 - G.cam.tz * s;
+  setView3d(false);
+}
+function setView3d(on) {
+  S.view3d = on;
+  glcv.hidden = ovcv.hidden = !on; cv.hidden = on;
+  $('v2d').classList.toggle('on', !on); $('v3d').classList.toggle('on', on); $('btnTop').disabled = !on;
+  resizeCanvas(); changed();
+}
+function fit3d() {
+  if (!S.clean) return;
+  const W = S.clean.width, H = S.clean.height;
+  Object.assign(G.cam, { tx: W / 2, tz: H / 2, dist: Math.max(H, W * CH / CW) / 0.96 / 2 / Math.tan(G.fov / 2) });
+  S.dirty = true;
+}
+// souris en 3D
+let drag3 = null;
+const ev3 = e => { const r = glcv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+function startOrbit(e) { drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY }; glcv.style.cursor = 'grabbing'; }
+glcv.addEventListener('contextmenu', e => e.preventDefault());
+glcv.addEventListener('pointerdown', e => {
+  glcv.setPointerCapture(e.pointerId);
+  const p = ev3(e);
+  if (e.button === 2) { drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, right: true }; return; }
+  if (e.button !== 0) return;
+  if (e.shiftKey) return startOrbit(e);
+  const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
+  if (hit && hit.kind === 'proj' && g) { drag3 = { type: 'move', g0: g, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; return; }
+  if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
+});
+glcv.addEventListener('pointermove', e => {
+  if (!drag3) return;
+  const p = ev3(e);
+  if (drag3.type === 'orbit') {
+    const dx = e.clientX - drag3.lx, dy = e.clientY - drag3.ly; drag3.lx = e.clientX; drag3.ly = e.clientY;
+    if (drag3.right && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 4) return;
+    drag3.moved = true;
+    G.cam.yaw = mod(G.cam.yaw + dx * 0.006 + Math.PI, 2 * Math.PI) - Math.PI;
+    G.cam.pitch = clamp(G.cam.pitch - dy * 0.006, 0, 80 * D2R);
+  } else {
+    const g = ground3(p.x, p.y); if (!g) return;
+    if (drag3.type === 'pan') { G.cam.tx += drag3.g0[0] - g[0]; G.cam.tz += drag3.g0[2] - g[2]; }
+    else { S.building.cx = drag3.cx + g[0] - drag3.g0[0]; S.building.cy = drag3.cy + g[2] - drag3.g0[2]; syncUI(); }
+  }
+  S.dirty = true;
+});
+glcv.addEventListener('pointerup', e => {
+  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e); heightPopupFor(pick3(p.x, p.y), e.clientX, e.clientY); }
+  drag3 = null; glcv.style.cursor = 'default'; changed();
+});
+glcv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
+  const nd = clamp(G.cam.dist * f, 5, 1e6), k = nd / G.cam.dist;
+  if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
+  G.cam.dist = nd; S.dirty = true;
+}, { passive: false });
+$('v2d').onclick = exit3D;
+$('v3d').onclick = enter3D;
+$('btnTop').onclick = () => { G.cam.yaw = 0; G.cam.pitch = 0; S.dirty = true; };
+function snapshot3d() {
+  draw3d();
+  const c = document.createElement('canvas'); c.width = glcv.width; c.height = glcv.height;
+  const x = c.getContext('2d'); x.drawImage(glcv, 0, 0); x.drawImage(ovcv, 0, 0);
+  const txt = fmtDate(S.day) + ' — ' + fmtTime(S.minute) + (S.utcMode ? ' TU' : ' (heure locale)') + ' — hauteur ' + fmtNum(S.height) + ' m';
+  x.setTransform(DPR, 0, 0, DPR, 0, 0); x.font = 'bold 13px system-ui, sans-serif'; x.textBaseline = 'top';
+  const w = x.measureText(txt).width + 14; x.fillStyle = 'rgba(255,255,255,0.9)'; x.fillRect(6, 6, w, 22); x.fillStyle = '#111'; x.fillText(txt, 13, 11);
+  return c;
+}
 
 /* ---------------------------------------------------------------- Clavier */
 document.addEventListener('keydown', e => {
