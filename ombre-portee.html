@@ -7,7 +7,7 @@
 <style>
 :root{
   --bg:#f4f5f7; --panel:#ffffff; --line:#d8dbe0; --text:#1d2330; --muted:#667085;
-  --accent:#2563eb; --accent-soft:#e8efff; --warn:#b45309;
+  --accent:#2563eb; --accent-soft:#e8efff; --warn:#b45309; --bld:#15803d;
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;font:13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--text);background:var(--bg)}
@@ -17,6 +17,11 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 h1{font-size:16px;margin:4px 0 8px}
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;border-top:1px solid var(--line);padding-top:10px}
 section:first-of-type h2{border-top:none;padding-top:0}
+h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
+h2::before{content:'▾';display:inline-block;font-size:11px;width:10px;transition:transform .15s}
+h2:hover{color:var(--text)}
+section.collapsed h2::before{transform:rotate(-90deg)}
+section.collapsed>:not(h2){display:none!important}
 button,select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text);cursor:pointer}
 button:hover{border-color:#aab;background:#fafbff}
 button.on{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -101,6 +106,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="f"><span class="lbl drag" data-for="iW">Longueur</span><input type="text" id="iW"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iL">Largeur</span><input type="text" id="iL"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iA">Rotation</span><input type="text" id="iA"><span class="u">°</span></div>
+    <div class="f"><span class="lbl">Emprise au sol</span><b id="footprint"></b></div>
     <div class="hint">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
     <div class="row">
       <button id="btnDraw">Dessiner un immeuble</button>
@@ -113,8 +119,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row"><select id="city" style="width:100%"><option value="">— Choisir une ville (ou saisir les coordonnées) —</option></select></div>
     <div class="f"><span class="lbl drag" data-for="iLat">Latitude</span><input type="text" id="iLat"><span class="u">° N</span></div>
     <div class="f"><span class="lbl drag" data-for="iLon">Longitude</span><input type="text" id="iLon"><span class="u">° E</span></div>
-    <div class="f"><span class="lbl drag" data-for="iTz">Fuseau (hiver)</span><input type="text" id="iTz"><span class="u">h / TU</span></div>
+    <div class="f"><span class="lbl drag" data-for="iTz">Fuseau horaire</span><input type="text" id="iTz"><span class="u" title="Décalage par rapport au temps universel, en heure d'hiver">h (hiver)</span></div>
     <div class="row"><label><input type="checkbox" id="cDst"> Changement d'heure automatique (règle européenne)</label></div>
+    <div id="tzNow" class="hint"></div>
     <div class="f"><span class="lbl drag" data-for="iNorth">Nord du plan</span><input type="text" id="iNorth"><span class="u">°</span></div>
     <div class="hint">0° = nord en haut du plan ; valeur positive = nord tourné dans le sens horaire.</div>
   </section>
@@ -126,6 +133,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row">
       <button id="btnScale">Tracer l'échelle</button>
       <button id="btnOcr" title="Lit le nombre écrit près du segment rouge (nécessite Internet la première fois)">Lire la longueur sur le plan</button>
+      <button id="btnScaleClear" class="small" title="Supprime le segment d'échelle">Effacer l'échelle</button>
     </div>
   </section>
 
@@ -204,8 +212,9 @@ const $ = id => document.getElementById(id);
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
 const MONTHS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
 const MONTHS_S = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
-const SC_COLORS = ['#e6194b','#2e9e3e','#f58231','#911eb4','#c9a000','#f032e6','#9a6324','#469990','#808000','#e377c2','#17becf','#555555'];
-const TR_COLORS = ['#ff7f0e','#d62728','#2ca02c','#9467bd','#8c564b','#e377c2'];
+const SC_COLORS = ['#e6194b','#4363d8','#f58231','#911eb4','#c9a000','#f032e6','#9a6324','#469990','#808000','#e377c2','#17becf','#555555'];
+const BLD_DARK = '#14532d';
+const TR_COLORS = ['#ff7f0e','#d62728','#1f77b4','#9467bd','#8c564b','#e377c2'];
 const CITIES = [
   ['Toulouse',43.6047,1.4442],['Paris',48.8566,2.3522],['Lyon',45.764,4.8357],['Marseille',43.2965,5.3698],
   ['Bordeaux',44.8378,-0.5792],['Lille',50.6292,3.0573],['Nantes',47.2184,-1.5536],['Strasbourg',48.5734,7.7521],
@@ -218,6 +227,7 @@ const pad2 = n => String(n).padStart(2, '0');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const fmtNum = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toFixed(d).replace('.', ',');
+const fmtLen = v => fmtNum(v, 2).replace(/,?0+$/, '');   // 26,98 · 27,5 · 20
 const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''));
 
 /* ------------------------------------------------------------------ État */
@@ -335,7 +345,7 @@ function hull(pts) {
 }
 function shadowPoly(b, off) { const c = corners(b); return hull(c.concat(c.map(p => ({ x: p.x + off.x, y: p.y + off.y })))); }
 
-/* ------------------------------------------- Analyse de l'image (bleu / rouge) */
+/* ------------------------------------------- Analyse de l'image (vert / rouge) */
 function largestComponent(mask, W, H) {
   const lab = new Int32Array(W * H); let cur = 0, best = 0, bestN = 0; const st = [];
   for (let i = 0; i < W * H; i++) {
@@ -392,24 +402,29 @@ function minAreaRect(idx, W) {
 function analyzeImage(canvas) {
   const W = canvas.width, H = canvas.height;
   const d = canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
-  const blue = new Uint8Array(W * H), red = new Uint8Array(W * H);
+  const green = new Uint8Array(W * H), blue = new Uint8Array(W * H), red = new Uint8Array(W * H);
+  let nGreen = 0;
   for (let i = 0, p = 0; i < W * H; i++, p += 4) {
     const r = d[p], g = d[p + 1], b = d[p + 2];
     if (d[p + 3] < 64) continue;
-    if (b > 100 && b - r > 50 && b - g > 30) blue[i] = 1;
+    if (g > 90 && g - r > 50 && g - b > 50) { green[i] = 1; nGreen++; }
+    else if (b > 140 && b - r > 90 && b - g > 90) blue[i] = 1;     // bleu franc uniquement (pas le bleu clair des piscines)
     else if (r > 120 && r - g > 60 && r - b > 60) red[i] = 1;
   }
   const res = {};
-  const bc = largestComponent(blue, W, H);
+  // immeuble : rectangle vert ; à défaut, rectangle bleu franc (anciens plans)
+  let ch = 1, bc = nGreen >= 40 ? largestComponent(green, W, H) : null;
+  if (!bc || bc.length < 40) { ch = 2; bc = largestComponent(blue, W, H); }
+  const oth = ch === 1 ? 2 : 1, sat = i => d[i * 4 + ch] - Math.max(d[i * 4], d[i * 4 + oth]);
   if (bc && bc.length >= 40) {
     // géométrie : seuls les pixels couverts à plus de 50 % (évite l'élargissement dû à l'anticrénelage)
-    let dmax = 0; for (const i of bc) dmax = Math.max(dmax, d[i * 4 + 2] - Math.max(d[i * 4], d[i * 4 + 1]));
-    const strong = bc.filter(i => d[i * 4 + 2] - Math.max(d[i * 4], d[i * 4 + 1]) >= dmax * 0.5);
+    let dmax = 0; for (const i of bc) dmax = Math.max(dmax, sat(i));
+    const strong = bc.filter(i => sat(i) >= dmax * 0.5);
     const rect = minAreaRect(strong.length >= 20 ? strong : bc, W);
     let sr = 0, sg = 0, sb = 0;
     for (const i of bc) { sr += d[i * 4]; sg += d[i * 4 + 1]; sb += d[i * 4 + 2]; }
     const n = bc.length, filled = n / (rect.w * rect.l) > 0.55;
-    res.blue = { idx: bc, rect, style: { color: `rgb(${Math.round(sr / n)},${Math.round(sg / n)},${Math.round(sb / n)})`, filled, thick: filled ? 0 : clamp(n / (2 * (rect.w + rect.l)), 1, 30) } };
+    res.blue = { idx: bc, rect, green: ch === 1, style: { color: `rgb(${Math.round(sr / n)},${Math.round(sg / n)},${Math.round(sb / n)})`, filled, thick: filled ? 0 : clamp(n / (2 * (rect.w + rect.l)), 1, 30) } };
   }
   const rc = largestComponent(red, W, H);
   if (rc && rc.length >= 10) {
@@ -422,11 +437,11 @@ function analyzeImage(canvas) {
     let a0 = Infinity, a1 = -Infinity;
     for (const i of rc) { const a = (i % W + 0.5 - mx) * ux + (Math.floor(i / W) + 0.5 - my) * uy; a0 = Math.min(a0, a); a1 = Math.max(a1, a); }
     a0 -= 0.5; a1 += 0.5;
-    if (a1 - a0 >= 15) res.red = { p1: { x: mx + ux * a0, y: my + uy * a0 }, p2: { x: mx + ux * a1, y: my + uy * a1 } };
+    if (a1 - a0 >= 15) res.red = { p1: { x: mx + ux * a0, y: my + uy * a0 }, p2: { x: mx + ux * a1, y: my + uy * a1 }, thick: clamp(rc.length / (a1 - a0), 1, 20) };
   }
   return res;
 }
-/** Efface le rectangle bleu d'origine en le « rebouchant » avec les pixels voisins. */
+/** Efface le rectangle (vert) d'origine en le « rebouchant » avec les pixels voisins. */
 function inpaint(canvas, idx, dil = 2) {
   const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d', { willReadFrequently: true });
   const img = ctx.getImageData(0, 0, W, H), d = img.data;
@@ -510,8 +525,8 @@ function setImage(canvas, dataURL, name, keep) {
   if (!keep) {
     S.building = S.origRect ? { ...S.origRect } : null;
     S.traj = [];
-    S.scale = an.red ? { p1: an.red.p1, p2: an.red.p2, meters: 0 } : null;
-    msgs.push(an.blue ? 'Immeuble (rectangle bleu) détecté.' : 'Aucun rectangle bleu détecté : utilisez « Dessiner un immeuble ».');
+    S.scale = an.red ? { p1: an.red.p1, p2: an.red.p2, meters: 0, thick: an.red.thick } : null;
+    msgs.push(an.blue ? 'Immeuble (rectangle ' + (an.blue.green ? 'vert' : 'bleu') + ') détecté.' : 'Aucun rectangle vert détecté : utilisez « Dessiner un immeuble ».');
     msgs.push(an.red ? 'Segment rouge détecté (' + fmtNum(dist(an.red.p1, an.red.p2), 0) + ' px) : indiquez sa longueur réelle.' : 'Aucun segment rouge : utilisez « Tracer l\'échelle ».');
   }
   fitView(); changed();
@@ -520,6 +535,7 @@ function setImage(canvas, dataURL, name, keep) {
 }
 
 /* ------------------------------------------------- Lecture de l'échelle (OCR) */
+let ocrWorker = null;
 async function ocrScale(auto) {
   if (!S.scale || !S.orig) { if (!auto) alert('Aucun segment d\'échelle sur le plan.'); return; }
   const { p1, p2 } = S.scale, len = dist(p1, p2), img = S.orig;
@@ -527,31 +543,58 @@ async function ocrScale(auto) {
   const x0 = clamp(Math.floor(Math.min(p1.x, p2.x) - mx), 0, img.width), x1 = clamp(Math.ceil(Math.max(p1.x, p2.x) + mx), 0, img.width);
   const y0 = clamp(Math.floor(Math.min(p1.y, p2.y) - my), 0, img.height), y1 = clamp(Math.ceil(Math.max(p1.y, p2.y) + my), 0, img.height);
   if (x1 - x0 < 5 || y1 - y0 < 5) return;
-  const k = clamp(300 / (y1 - y0), 1, 4);
-  const c = document.createElement('canvas'); c.width = Math.round((x1 - x0) * k); c.height = Math.round((y1 - y0) * k);
-  const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
-  const id = ctx.getImageData(0, 0, c.width, c.height), d = id.data;
-  for (let p = 0; p < d.length; p += 4) {
-    const r = d[p], g = d[p + 1], b = d[p + 2];
-    const v = (r > 120 && r - g > 60 && r - b > 60) ? 255 : (0.3 * r + 0.59 * g + 0.11 * b);
-    d[p] = d[p + 1] = d[p + 2] = v;
-  }
-  ctx.putImageData(id, 0, 0);
+  const ux = (p2.x - p1.x) / len, uy = (p2.y - p1.y) / len, tol = (S.scale.thick || 3) / 2 + 2;
+  const prep = target => {
+    const k = clamp(target / (y1 - y0), 1, 8);
+    const c = document.createElement('canvas'); c.width = Math.round((x1 - x0) * k); c.height = Math.round((y1 - y0) * k);
+    const ctx = c.getContext('2d'); ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(img, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+    const id = ctx.getImageData(0, 0, c.width, c.height), d = id.data;
+    // le segment rouge est effacé (blanc) ; le texte, même écrit en rouge, est passé en noir
+    for (let p = 0, q = 0; p < d.length; p += 4, q++) {
+      const r = d[p], g = d[p + 1], b = d[p + 2];
+      let v = 0.3 * r + 0.59 * g + 0.11 * b;
+      if (r > 120 && r - g > 60 && r - b > 60) {
+        const X = x0 + (q % c.width + 0.5) / k - p1.x, Y = y0 + (Math.floor(q / c.width) + 0.5) / k - p1.y;
+        const t = clamp(X * ux + Y * uy, 0, len);
+        v = Math.hypot(X - t * ux, Y - t * uy) <= tol ? 255 : 0;
+      }
+      v = v < 150 ? 0 : 255;
+      d[p] = d[p + 1] = d[p + 2] = v; d[p + 3] = 255;
+    }
+    ctx.putImageData(id, 0, 0);
+    return c;
+  };
+  const parse = text => {
+    text = (text || '').replace(/(\d)\s*[.,]\s*(\d)/g, '$1,$2'); let m;
+    if ((m = text.match(/(\d+(?:[.,]\d+)?)\s*(km|m)\b/i))) return { s: m[1], v: parseNum(m[1]) * (m[2].toLowerCase() === 'km' ? 1000 : 1) };
+    if ((m = text.match(/\d+(?:[.,]\d+)?/))) return { s: m[0], v: parseNum(m[0]) };
+    return null;
+  };
+  let text = '';
   try {
     status('Lecture de la longueur écrite près du segment rouge…', true);
     await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js');
-    const { data } = await Tesseract.recognize(c, 'eng');
-    const text = (data.text || '').replace(/[Oo](?=\s*m\b)/g, '0');
-    let val = null, m;
-    if ((m = text.match(/(\d+(?:[.,]\d+)?)\s*(km|m)\b/i))) val = parseNum(m[1]) * (m[2].toLowerCase() === 'km' ? 1000 : 1);
-    else if ((m = text.match(/\d+(?:[.,]\d+)?/))) val = parseNum(m[0]);
+    if (!ocrWorker) ocrWorker = Tesseract.createWorker('eng').then(async w => {
+      await w.setParameters({ tessedit_char_whitelist: '0123456789.,km ', tessedit_pageseg_mode: '11' }); return w;
+    }).catch(e => { ocrWorker = null; throw e; });
+    const w = await ocrWorker;
+    // plusieurs agrandissements : une petite virgule n'est pas toujours vue ; on garde la lecture qui la contient
+    const reads = [];
+    for (const target of [600, 400, 900]) {
+      const { data } = await w.recognize(prep(target));
+      if (!text) text = data.text || '';
+      const r = parse(data.text); if (r) reads.push(r);
+    }
+    const digits = r => r.s.replace(/\D/g, '');
+    const best = reads.find(r => /[.,]/.test(r.s) && reads.every(o => digits(o) === digits(r) || /[.,]/.test(o.s))) || reads[0];
+    const val = best ? best.v : null;
     if (val > 0 && val < 1e5) {
       if (S.scale.meters > 0 && auto) return;
       S.scale.meters = val; changed();
-      status('Longueur lue sur le plan : ' + fmtNum(val, val % 1 ? 1 : 0) + ' m — vérifiez-la (champ « Longueur réelle »).', true);
+      status('Longueur lue sur le plan : ' + fmtLen(val) + ' m — vérifiez-la, virgule comprise (champ « Longueur réelle »).', true);
     } else {
-      status('Aucun nombre lisible près du segment rouge : saisissez la longueur à la main.', true);
+      status('Aucun nombre lisible près du segment rouge' + (text.trim() ? ' (lu : « ' + text.trim().replace(/\s+/g, ' ') + ' »)' : '') + ' : saisissez la longueur à la main.', true);
     }
   } catch (e) {
     console.warn(e);
@@ -585,8 +628,8 @@ function makeDemo() {
     for (let k = -h; k < w; k += 9) { x.beginPath(); x.moveTo(a + k, b + h); x.lineTo(a + k + h, b); x.stroke(); }
     x.restore(); x.strokeStyle = '#222'; x.lineWidth = 1.5; x.strokeRect(a, b, w, h);
   }
-  // projet : rectangle bleu
-  x.save(); x.translate(560, 820); x.rotate(-12 * D2R); x.strokeStyle = '#0000ff'; x.lineWidth = 4; x.strokeRect(-110, -60, 220, 120); x.restore();
+  // projet : rectangle vert
+  x.save(); x.translate(560, 820); x.rotate(-12 * D2R); x.strokeStyle = '#00b050'; x.lineWidth = 4; x.strokeRect(-110, -60, 220, 120); x.restore();
   // échelle : segment rouge de 20 m = 200 px
   x.strokeStyle = '#e00000'; x.lineWidth = 4; x.beginPath(); x.moveTo(1300, 1060); x.lineTo(1500, 1060); x.stroke();
   x.fillStyle = '#000'; x.font = 'bold 26px sans-serif'; x.fillText('20 m', 1370, 1045);
@@ -668,7 +711,7 @@ function render(ctx, W, H, v, opt = {}) {
   ctx.imageSmoothingEnabled = v.s < 3;
   ctx.drawImage(S.clean, 0, 0);
   if (S.showOrig && S.origRect && b && (Math.abs(b.cx - S.origRect.cx) + Math.abs(b.cy - S.origRect.cy) + Math.abs(b.w - S.origRect.w) + Math.abs(b.l - S.origRect.l) + Math.abs(b.a - S.origRect.a) * 100 > 0.5)) {
-    polyPath(ctx, corners(S.origRect)); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = 'rgba(30,60,200,0.6)'; ctx.lineWidth = 1.5 * px; ctx.stroke(); ctx.setLineDash([]);
+    polyPath(ctx, corners(S.origRect)); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = 'rgba(21,128,61,0.7)'; ctx.lineWidth = 1.5 * px; ctx.stroke(); ctx.setLineDash([]);
   }
   const scen = [];
   if (b) {
@@ -681,7 +724,7 @@ function render(ctx, W, H, v, opt = {}) {
       const so = shadowOffset(sun, hM);
       if (so) { polyPath(ctx, shadowPoly(b, so)); ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
     }
-    polyPath(ctx, corners(b)); ctx.fillStyle = 'rgba(37,99,235,0.82)'; ctx.fill(); ctx.strokeStyle = '#0b2fa8'; ctx.lineWidth = 2 * px; ctx.stroke();
+    polyPath(ctx, corners(b)); ctx.fillStyle = 'rgba(22,163,74,0.82)'; ctx.fill(); ctx.strokeStyle = BLD_DARK; ctx.lineWidth = 2 * px; ctx.stroke();
   }
   ctx.restore();
   ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -703,7 +746,7 @@ function render(ctx, W, H, v, opt = {}) {
     for (const p of [a, c]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, 7); ctx.stroke(); }
     if (!print || !scaleOk()) {
       ctx.font = '12px system-ui, sans-serif';
-      const t = scaleOk() ? fmtNum(S.scale.meters, S.scale.meters % 1 ? 1 : 0) + ' m' : 'longueur ?';
+      const t = scaleOk() ? fmtLen(S.scale.meters) + ' m' : 'longueur ?';
       const w = ctx.measureText(t).width + 12;
       drawLabel(ctx, P.place((a.x + c.x) / 2, (a.y + c.y) / 2, w, 18, Math.PI / 2), t, '#e00000', null);
     }
@@ -758,7 +801,7 @@ function render(ctx, W, H, v, opt = {}) {
       if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
       const o = inside ? -13 : 14;   // à l'intérieur si l'immeuble est assez grand (évite les poignées)
       ctx.save(); ctx.translate(mx + nx * o, my + ny * o); ctx.rotate(ang);
-      if (inside) { ctx.fillStyle = '#fff'; ctx.fillText(txt, 0, 0); } else { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = '#0b2fa8'; ctx.fillText(txt, 0, 0); }
+      if (inside) { ctx.fillStyle = '#fff'; ctx.fillText(txt, 0, 0); } else { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = BLD_DARK; ctx.fillText(txt, 0, 0); }
       ctx.restore();
     };
     edgeLabel(bS[0], bS[1], fmtNum(b.w / ppm) + ' m');
@@ -769,7 +812,7 @@ function render(ctx, W, H, v, opt = {}) {
   // poignées
   if (b && !print && S.mode === 'select') {
     const hs = handles();
-    ctx.strokeStyle = '#0b2fa8'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = BLD_DARK; ctx.lineWidth = 1.5;
     const top = hs.find(h => h.kind === 'rot');
     const tm = hs.find(h => h.kind === 'size' && h.hx === 0 && h.hy === -1);
     ctx.beginPath(); ctx.moveTo(tm.x, tm.y); ctx.lineTo(top.x, top.y); ctx.stroke();
@@ -842,7 +885,7 @@ function render(ctx, W, H, v, opt = {}) {
   }
   // tracés temporaires
   if (S.temp) {
-    ctx.strokeStyle = S.temp.type === 'scale' ? '#e00000' : '#0b2fa8'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = S.temp.type === 'scale' ? '#e00000' : BLD_DARK; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
     const a = toS(S.temp.p1, v), c = toS(S.temp.p2, v);
     if (S.temp.type === 'scale') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
     else ctx.strokeRect(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y));
@@ -961,7 +1004,7 @@ function finishScale() {
   const { p1, p2 } = S.temp; S.temp = null;
   if (dist(p1, p2) * V.s < 5) return;
   const v = parseNum(prompt('Longueur réelle de ce segment (en mètres) :', S.scale && S.scale.meters ? String(S.scale.meters).replace('.', ',') : ''));
-  S.scale = { p1, p2, meters: v > 0 ? v : 0 };
+  S.scale = { p1, p2, meters: v > 0 ? v : 0, thick: 3 };
   setMode('select'); changed();
 }
 function setMode(m) {
@@ -1003,8 +1046,10 @@ function numField(id, o) {
   const el = $(id), lbl = document.querySelector(`.drag[data-for="${id}"]`);
   const f = { el, ...o };
   const apply = v => { if (!isFinite(v)) return; if (o.min !== undefined) v = Math.max(o.min, v); if (o.max !== undefined) v = Math.min(o.max, v); o.set(v); changed(); };
-  attachScrub(el, (n, e) => { if (o.enabled && !o.enabled()) return; const st = e.shiftKey ? o.fine : o.step; apply(Math.round((o.get() + n * st) / st) * st); }, lbl);
-  el.addEventListener('change', () => { if (o.enabled && !o.enabled()) return; apply(parseNum(el.value)); el.blur(); });
+  attachScrub(el, (n, e) => { if (o.enabled && !o.enabled()) return; f.editing = false; const st = e.shiftKey ? o.fine : o.step; apply(Math.round((o.get() + n * st) / st) * st); }, lbl);
+  el.addEventListener('input', () => f.editing = true);   // saisie au clavier en cours : ne pas écraser
+  el.addEventListener('change', () => { if (o.enabled && !o.enabled()) return; f.editing = false; apply(parseNum(el.value)); el.blur(); });
+  el.addEventListener('blur', () => { if (f.editing) { f.editing = false; syncUI(); } });
   el.addEventListener('keydown', e => { if (e.key === 'Enter') el.blur(); e.stopPropagation(); });
   numFields.push(f);
 }
@@ -1039,6 +1084,8 @@ function editTime() {
 ['fHour', 'fMin'].forEach(id => $(id).addEventListener('dblclick', editTime));
 $('rTime').addEventListener('input', e => { S.minute = S.minute - mod(S.minute, 1440) + +e.target.value; changed(); });
 $('rDay').addEventListener('input', e => { S.day = toDays(fromDays(S.day).y, 0, 1) + +e.target.value; changed(); });
+attachScrub($('rTime'), retime((n, e) => { const st = e.shiftKey ? 1 : 5; S.minute = Math.round(S.minute / st) * st + n * st; }));
+attachScrub($('rDay'), retime(n => S.day += n));
 function setUtcMode(u) {
   if (u === S.utcMode) return;
   const tot = S.day * 1440 + mod(S.minute, 1440) - curOff() * 60;   // instant en TU
@@ -1074,9 +1121,10 @@ $('rOpa').oninput = e => { S.opacity = +e.target.value; changed(); };
 
 // immeuble, échelle, modes
 $('btnDraw').onclick = () => { if (!S.clean) return alert('Ouvrez d\'abord un plan.'); setMode(S.mode === 'draw' ? 'select' : 'draw'); };
-$('btnResetB').onclick = () => { if (S.origRect) { S.building = { ...S.origRect }; changed(); } else alert('Pas de rectangle bleu d\'origine sur ce plan.'); };
+$('btnResetB').onclick = () => { if (S.origRect) { S.building = { ...S.origRect }; changed(); } else alert('Pas de rectangle vert d\'origine sur ce plan.'); };
 $('btnScale').onclick = () => { if (!S.clean) return; setMode(S.mode === 'scale' ? 'select' : 'scale'); };
 $('btnOcr').onclick = () => ocrScale(false);
+$('btnScaleClear').onclick = () => { if (!S.scale) return; if (S.mode === 'scale') setMode('select'); S.scale = null; changed(); status('Échelle effacée. Utilisez « Tracer l\'échelle » pour en définir une nouvelle.', true); };
 $('btnTraj').onclick = () => { if (!S.building) return alert('Aucun immeuble sur le plan.'); setMode(S.mode === 'traj' ? 'select' : 'traj'); };
 $('btnTrajClear').onclick = () => { S.traj = []; changed(); };
 $('mSelect').onclick = () => setMode('select');
@@ -1100,12 +1148,26 @@ $('scenPreset').onchange = e => {
   S.showScenario = true; changed();
 };
 
+// sections repliables (état mémorisé)
+{
+  let st = {}; try { st = JSON.parse(localStorage.getItem('ombre-portee-sections') || '{}'); } catch (e) { }
+  document.querySelectorAll('aside section').forEach(sec => {
+    const h = sec.querySelector('h2'), key = h.textContent.trim();
+    if (st[key]) sec.classList.add('collapsed');
+    h.title = 'Cliquer pour replier / déplier';
+    h.addEventListener('click', () => {
+      st[key] = sec.classList.toggle('collapsed');
+      try { localStorage.setItem('ombre-portee-sections', JSON.stringify(st)); } catch (e) { }
+    });
+  });
+}
+
 /* ---------------------------------------------- Synchronisation de l'UI */
 function syncUI() {
   for (const f of numFields) {
     const on = !f.enabled || f.enabled();
     f.el.disabled = !on;
-    if (document.activeElement !== f.el) f.el.value = on ? fmtNum(f.get(), f.dec).replace(/,?0+$/, '').replace(/^-0$/, '0') || '0' : '';
+    if (!f.editing) f.el.value = on ? fmtNum(f.get(), f.dec).replace(/,?0+$/, '').replace(/^-0$/, '0') || '0' : '';
   }
   const c = fromDays(S.day);
   $('fDay').textContent = c.d; $('fMonth').textContent = MONTHS[c.m]; $('fYear').textContent = c.y;
@@ -1118,6 +1180,10 @@ function syncUI() {
   $('cDst').checked = S.dstAuto; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
   $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('rOpa').value = S.opacity;
   $('levels').textContent = '≈ R+' + Math.max(0, Math.round(S.height / 3) - 1);
+  const bb = S.building, ppm = pxPerM();
+  $('footprint').innerHTML = bb ? fmtNum(bb.w * bb.l / (ppm * ppm), 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' m²' + (scaleOk() ? '' : ' <span class="warn">(échelle ?)</span>') : '—';
+  const offL = offsetFor(S.day, mod(S.minute, 1440), false), fo = v => 'UTC' + (v >= 0 ? '+' : '−') + fmtNum(Math.abs(v), v % 1 ? 1 : 0);
+  $('tzNow').textContent = 'Le ' + fmtDate(S.day) + ' : ' + fo(offL) + (S.dstAuto ? (offL !== S.tzStd ? ' (heure d\'été)' : ' (heure d\'hiver)') : ' (pas de changement d\'heure)');
   const ci = CITIES.findIndex(([, la, lo]) => Math.abs(la - S.lat) < 1e-4 && Math.abs(lo - S.lon) < 1e-4);
   citySel.value = ci >= 0 ? CITIES[ci][1] + ',' + CITIES[ci][2] : '';
   // échelle
@@ -1208,7 +1274,7 @@ $('btnSavePlan').onclick = async () => {
   if (!S.clean) return alert('Ouvrez d\'abord un plan.');
   const c = cloneCanvas(S.clean), x = c.getContext('2d'), b = S.building;
   if (b) {
-    const st = S.origStyle || { color: '#0000ff', filled: true, thick: 0 };
+    const st = S.origStyle || { color: '#00b050', filled: true, thick: 0 };
     if (st.filled) { polyPath(x, corners(b)); x.fillStyle = st.color; x.fill(); }
     else { const t = st.thick; polyPath(x, corners({ ...b, w: Math.max(1, b.w - t), l: Math.max(1, b.l - t) })); x.strokeStyle = st.color; x.lineWidth = t; x.stroke(); }
   }
@@ -1310,7 +1376,7 @@ new ResizeObserver(() => { const had = CW; resizeCanvas(); if (!had) fitView(); 
 resizeCanvas();
 syncUI();
 setMode('select');
-status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle bleu et un segment rouge d\'échelle, ou essayez le plan de démonstration.');
+status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle vert (l\'immeuble) et un segment rouge d\'échelle, ou essayez le plan de démonstration.');
 requestAnimationFrame(tick);
 </script>
 </body>
