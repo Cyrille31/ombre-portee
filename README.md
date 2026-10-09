@@ -7,7 +7,19 @@ Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
 Aucune installation : double-cliquez sur **`ombre-portee.html`**. Le fichier s'ouvre dans votre navigateur (Chrome, Edge ou Firefox, sur PC).
 L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir un PDF et pour lire automatiquement la longueur de l'échelle.
 
-## Préparer le plan
+## Site à partir d'une adresse (recommandé)
+
+Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la taille du carré (100 à 800 m) et le fond de plan, puis cliquez sur **Charger le site**. Le logiciel télécharge auprès de l'IGN (Géoplateforme, gratuit, sans compte) :
+
+- le **fond de plan** (plan IGN, photo aérienne ou cadastre), à l'échelle exacte, nord en haut ;
+- les **bâtiments** de la BD TOPO, avec leur contour exact, leur hauteur et l'altitude de leur pied ;
+- le **relief** : modèle de terrain LiDAR HD au demi-mètre, complété par le RGE ALTI là où le LiDAR manque.
+
+La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (rectangle vert, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
+
+Il faut une connexion Internet au moment du chargement. Une fois enregistré, le projet contient toutes les données et s'ouvre hors ligne.
+
+## Préparer un plan (image ou PDF)
 
 - Une **image** du plan cadastral (PNG, JPG…) ou un **PDF** (seule la page 1 est utilisée).
 - L'immeuble projeté est un **rectangle vert**, plein ou en contour. Le bleu clair des piscines est ignoré. Un rectangle bleu franc est encore accepté s'il n'y a pas de vert (anciens plans).
