@@ -86,9 +86,12 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row">
       <span class="hint">Carré de</span>
       <select id="siteSize" title="Côté du carré centré sur l'adresse"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
-      <select id="siteBg" title="Fond de plan"><option value="plan">Plan IGN + cadastre</option><option value="ortho">Photo aérienne + cadastre</option><option value="cad">Cadastre seul</option></select>
+      <select id="siteBg" title="Fond de plan (changement immédiat)"><option value="plan">Plan IGN</option><option value="ortho">Photo aérienne</option><option value="none">Fond blanc</option></select>
     </div>
-    <div class="row"><label title="Hauteur de la végétation = modèle de surface LiDAR − terrain, hors bâtiments"><input type="checkbox" id="cTrees" checked> Inclure les arbres (LiDAR HD)</label></div>
+    <div class="row">
+      <label title="Parcelles du cadastre en surimpression"><input type="checkbox" id="cCad" checked> Cadastre</label>
+      <label title="Arbres issus du LiDAR HD (modèle de surface − terrain, hors bâtiments)"><input type="checkbox" id="cShowTrees" checked> Arbres</label>
+    </div>
     <div class="row"><button id="btnSite" class="on">Charger le site</button><span id="addrFound" class="hint"></span></div>
     <div class="hint">Télécharge auprès de l'IGN le fond de plan, les bâtiments avec leur hauteur (BD TOPO) et le relief (LiDAR HD, à défaut RGE ALTI). Nécessite Internet ; le projet enregistré fonctionne ensuite hors ligne.</div>
   </section>
@@ -213,7 +216,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row"><label><input type="checkbox" id="cOrig" checked> Contour de l'emplacement d'origine</label></div>
     <div class="row"><label><input type="checkbox" id="cDims" checked> Cotes sur le plan</label></div>
     <div class="row"><label><input type="checkbox" id="cNbLbl" checked> Hauteurs des constructions voisines</label></div>
-    <div class="row"><label><input type="checkbox" id="cShowTrees" checked> Arbres (vue 3D, site IGN)</label></div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:110px">Luminosité du fond</span><input type="range" id="rBright" min="-60" max="60" step="5" style="flex:1"><span id="vBright" class="hint" style="width:36px;text-align:right"></span></div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:110px">Contraste du fond</span><input type="range" id="rContrast" min="40" max="200" step="5" style="flex:1"><span id="vContrast" class="hint" style="width:36px;text-align:right"></span></div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:110px" title="Arbres en 3D : 0 % = opaques ; les ombres des arbres sont atténuées d'autant (feuillage clairsemé, hiver)">Transparence arbres</span><input type="range" id="rTreeT" min="0" max="90" step="5" style="flex:1"><span id="vTreeT" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="hint" style="margin-top:8px">
       Plan : molette = zoom, glisser le fond (ou clic droit) = déplacer, clic droit sur une construction = sa hauteur.<br>
       3D : Maj + glisser (ou clic droit + glisser) = pivoter / incliner, glisser = déplacer la vue ou l'immeuble.<br>
@@ -289,7 +294,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, bright: 0, contrast: 100, treeOpa: 100, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -606,7 +611,7 @@ function setImage(canvas, dataURL, name, keep, site) {
   S.clean = cloneCanvas(canvas);
   S.origRect = null; S.origStyle = null;
   if (site) return setSiteImage(canvas, site, keep);
-  S.site = null; S.terrain = null; S.veg = null;
+  S.site = null; S.terrain = null; S.veg = null; S.layers = null;
   const an = analyzeImage(canvas);
   if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = longSide(an.blue.rect); S.origStyle = an.blue.style; }
   NB = detectNeighbors(canvas);
@@ -846,6 +851,7 @@ function render(ctx, W, H, v, opt = {}) {
     for (const c of NB.list) if (c.h !== undefined && Math.max(c.x1 - c.x0, c.y1 - c.y0) * v.s > 28) {
       const q = toS({ x: c.lx, y: c.ly }, v); if (q.x < -40 || q.y < -20 || q.x > W + 40 || q.y > H + 20) continue;
       const t = fmtLen(c.h) + ' m', w = ctx.measureText(t).width + 10, rc = { x: q.x - w / 2, y: q.y - 9, w, h: 18 };
+      if (underDials(rc, W, H)) continue;
       P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
     }
   }
@@ -1247,6 +1253,12 @@ $('cDims').onchange = e => { S.showDims = e.target.checked; changed(); };
 $('cNbLbl').onchange = e => { S.showNbLbl = e.target.checked; changed(); };
 $('cShowTrees').onchange = e => { S.showTrees = e.target.checked; changed(); };
 $('rOpa').oninput = e => { S.opacity = +e.target.value; changed(); };
+$('rBright').oninput = e => { S.bright = +e.target.value; changed(); };
+$('rContrast').oninput = e => { S.contrast = +e.target.value; changed(); };
+$('rTreeT').oninput = e => { S.treeT = +e.target.value; changed(); };
+for (const [id, k] of [['rBright', 'bright'], ['rContrast', 'contrast'], ['rTreeT', 'treeT']]) $(id).addEventListener('dblclick', () => { S[k] = k === 'contrast' ? 100 : 0; changed(); });
+$('siteBg').onchange = e => { S.bgMode = e.target.value; if (S.layers) composeSite(); changed(); };
+$('cCad').onchange = e => { S.showCad = e.target.checked; if (S.layers) composeSite(); changed(); };
 
 // immeuble, échelle, modes
 $('btnAddB').onclick = () => {
@@ -1343,6 +1355,10 @@ function syncUI() {
   $('tzInfo').textContent = S.utcMode ? 'temps universel' : 'UTC' + (off >= 0 ? '+' : '−') + fmtNum(Math.abs(off), off % 1 ? 1 : 0).replace(/,0$/, '') + (S.dstAuto && off !== S.tzStd ? ' (heure d\'été)' : S.dstAuto ? ' (heure d\'hiver)' : '');
   $('cDst').checked = S.dstAuto; $('cSolar').checked = S.solarPresets; $('cScen').checked = S.showScenario; $('cCur').checked = S.showCurrent;
   $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('cNbLbl').checked = S.showNbLbl; $('cShowTrees').checked = S.showTrees; $('rOpa').value = S.opacity;
+  $('rBright').value = S.bright; $('vBright').textContent = (S.bright > 0 ? '+' : '') + S.bright + ' %';
+  $('rContrast').value = S.contrast; $('vContrast').textContent = S.contrast + ' %';
+  $('rTreeT').value = S.treeT; $('vTreeT').textContent = S.treeT + ' %';
+  $('siteBg').value = S.bgMode; $('cCad').checked = S.showCad;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
   { const bl = $('bldList'); bl.innerHTML = '';
@@ -1428,10 +1444,10 @@ $('btnSaveProj').title = 'Enregistre le plan et tous les réglages (vue 2D/3D, h
 $('btnSaveProj').onclick = async () => {
   if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
   const p = {
-    app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL,
+    app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { cx: (CW / 2 - V.ox) / V.s, cy: (CH / 2 - V.oy) / V.s, s: V.s }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1439,12 +1455,19 @@ $('btnSaveProj').onclick = async () => {
 };
 async function loadProject(p) {
   if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
-  const c = imgToCanvas(await loadImg(p.image));
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees'])
+  let c = imgToCanvas(await loadImg(p.image));
+  S.layers = null;
+  if (p.site && p.site.layers) {   // couches du site : recomposées selon les réglages enregistrés
+    const L = {};
+    for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = cc.height = im.width; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
+    if (L.plan || L.ortho || L.cad) S.layers = L;
+  }
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
-  setImage(c, p.image, p.fileName, true, p.site ? siteFromSave(p.site) : null);
+  if (S.layers) c = composeLayers(S.layers, (S.layers.plan || S.layers.ortho || S.layers.cad).width);
+  setImage(c, S.layers ? null : p.image, p.fileName, true, p.site ? siteFromSave(p.site) : null);
   const vw = p.view;
   if (vw) {
     if (vw.v2) { V.s = vw.v2.s; V.ox = CW / 2 - vw.v2.cx * vw.v2.s; V.oy = CH / 2 - vw.v2.cy * vw.v2.s; }
@@ -1732,17 +1755,26 @@ async function fetchImage(url, what) {
   const blob = await (await fetchRetry(url, null, what)).blob(), u = URL.createObjectURL(blob);
   try { return await loadImg(u); } finally { URL.revokeObjectURL(u); }
 }
-async function fetchBase(bb, px, bg) {
-  const o = SITE_BG[bg] || SITE_BG.plan;
-  const [base, cad] = await Promise.all([
-    o.base ? fetchImage(wmsUrl(o.base, bb, px, px, o.fmt), 'Fond de plan') : null,
-    o.cad ? fetchImage(wmsUrl(CAD_LAYER, bb, px, px, 'image/png', true), 'Cadastre').catch(e => { if (!o.base) throw e; console.warn(e); return null; }) : null
-  ]);
+/** Les trois couches (plan IGN, photo, cadastre) sont téléchargées une fois ; le fond affiché se recompose aussitôt. */
+async function fetchLayers(bb, px) {
+  const get = (layer, fmt, transp, what) => fetchImage(wmsUrl(layer, bb, px, px, fmt, transp), what).catch(e => { console.warn(e); return e; });
+  const [plan, ortho, cad] = await Promise.all([get(SITE_BG.plan.base, 'image/png', false, 'Plan IGN'), get(SITE_BG.ortho.base, 'image/jpeg', false, 'Photo aérienne'), get(CAD_LAYER, 'image/png', true, 'Cadastre')]);
+  const L = {}, errs = [];
+  for (const [k, v] of [['plan', plan], ['ortho', ortho], ['cad', cad]]) { if (v instanceof Error) errs.push(v.message); else { const c = document.createElement('canvas'); c.width = c.height = px; c.getContext('2d').drawImage(v, 0, 0, px, px); L[k] = c; } }
+  if (!L.plan && !L.ortho && !L.cad) throw new Error(errs.join(' ; '));
+  return { L, errs };
+}
+function composeLayers(L, px) {
   const c = document.createElement('canvas'); c.width = c.height = px;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, px, px);
-  if (base) x.drawImage(base, 0, 0, px, px);
-  if (cad) x.drawImage(cad, 0, 0, px, px);
+  const base = S.bgMode === 'ortho' ? (L.ortho || L.plan) : S.bgMode === 'plan' ? (L.plan || L.ortho) : null;
+  if (base) x.drawImage(base, 0, 0);
+  if (S.showCad && L.cad) x.drawImage(L.cad, 0, 0);
   return c;
+}
+function composeSite() {
+  const any = S.layers.plan || S.layers.ortho || S.layers.cad, c = composeLayers(S.layers, any.width);
+  S.orig = c; S.clean = c; S.origDataURL = null; S.dirty = true;
 }
 async function fetchGrid(layer, bb, n, what) {
   const buf = await (await fetchRetry(wmsUrl(layer, bb, n, n, 'image/x-bil;bits=32'), null, what || 'Relief')).arrayBuffer();
@@ -1771,7 +1803,7 @@ async function fetchBuildings(bb) {
   const out = []; let start = 0;
   for (;;) {
     const url = GEOPF + '/wfs/ows?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=BDTOPO_V3:batiment&SRSNAME=EPSG:2154&OUTPUTFORMAT=application/json' +
-      '&PROPERTYNAME=hauteur,altitude_minimale_sol,altitude_maximale_toit,nature,construction_legere,etat_de_l_objet,geometrie&COUNT=5000&STARTINDEX=' + start + '&BBOX=' + bb.join(',') + ',EPSG:2154';
+      '&PROPERTYNAME=hauteur,altitude_minimale_sol,altitude_minimale_toit,altitude_maximale_toit,nature,construction_legere,etat_de_l_objet,geometrie&COUNT=5000&STARTINDEX=' + start + '&BBOX=' + bb.join(',') + ',EPSG:2154';
     const j = await (await fetchRetry(url, null, 'Bâtiments (BD TOPO)')).json();
     const f = j.features || []; out.push(...f);
     if (f.length < 5000) break; start += f.length;
@@ -1802,7 +1834,7 @@ function nbFromBuildings(blds, W, H) {
   for (const b of blds) {
     // orientation : contour extérieur « négatif », trous « positifs » (normales des murs vers l'extérieur)
     const rings = b.rings.map((r, k) => (k === 0) === (ringArea(r) > 0) ? r.slice().reverse() : r);
-    const c = { n: 0, loops: rings, bd: b.bd, base: b.base, nature: b.nature };
+    const c = { n: 0, loops: rings, bd: b.bd, base: b.base, nature: b.nature, bdt: b.bdt, roof: b.roof };
     if (b.h !== undefined && b.h !== null) c.h = b.h;
     list.push(c);
     c.n = rasterize(ids, W, H, rings, list.length);
@@ -1822,6 +1854,56 @@ function terrainRange() {
   if (!T.range) { let a = Infinity, b = -Infinity; for (const v of T.z) { if (v < a) a = v; if (v > b) b = v; } T.range = [a - T.z0, b - T.z0]; }
   return T.range;
 }
+/** Toits en pente : profil (0 = gouttière, 1 = faîtage) tiré du MNS LiDAR à l'intérieur de chaque emprise. */
+function computeRoofs(mns, T) {
+  const n = T.n, cpx = T.cell * pxPerM(); let cnt = 0;
+  for (const c of NB.list) {
+    delete c.roof;
+    const i0 = Math.max(0, Math.floor(c.x0 / cpx)), i1 = Math.min(n - 1, Math.floor(c.x1 / cpx)), j0 = Math.max(0, Math.floor(c.y0 / cpx)), j1 = Math.min(n - 1, Math.floor(c.y1 / cpx));
+    const w = i1 - i0 + 1, h = j1 - j0 + 1; if (w < 2 || h < 2) continue;
+    const P = new Float32Array(w * h).fill(NaN), vals = [];
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      if (nbAt((i + 0.5) * cpx, (j + 0.5) * cpx) !== c) continue;
+      const m = mns[j * n + i]; if (!zOk(m)) continue;
+      P[(j - j0) * w + i - i0] = m; vals.push(m);
+    }
+    if (vals.length < 8) continue;
+    vals.sort((a, b) => a - b);
+    const sol = c.base !== undefined ? c.base + T.z0 : vals[0] - 3;
+    const top = vals[Math.floor(vals.length * 0.98)], eave = vals[Math.floor(vals.length * 0.1)];
+    if (top - eave < 0.8 || top - sol < 1.5) continue;   // toit plat
+    for (let k = 0; k < P.length; k++) if (!isNaN(P[k])) P[k] = clamp((P[k] - eave) / (top - eave), 0, 1);
+    for (let it = 0; it < 3; it++) {   // prolonge le profil hors de l'emprise (bords nets par découpe au pixel)
+      const Q = P.slice();
+      for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+        const k = j * w + i; if (!isNaN(P[k])) continue;
+        let t = 0, q = 0; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ii = i + a, jj = j + b; if (ii >= 0 && jj >= 0 && ii < w && jj < h && !isNaN(P[jj * w + ii])) { t += P[jj * w + ii]; q++; } }
+        if (q) Q[k] = t / q;
+      }
+      P.set(Q);
+    }
+    const v = new Float32Array((w + 1) * (h + 1));
+    for (let b = 0; b <= h; b++) for (let a = 0; a <= w; a++) {
+      let t = 0, q = 0;
+      for (const [ii, jj] of [[a - 1, b - 1], [a, b - 1], [a - 1, b], [a, b]]) if (ii >= 0 && jj >= 0 && ii < w && jj < h && !isNaN(P[jj * w + ii])) { t += P[jj * w + ii]; q++; }
+      v[b * (w + 1) + a] = q ? t / q : 0;
+    }
+    c.h = Math.round((top - sol) * 10) / 10; c.bd = c.h;
+    c.roof = { i0, j0, w, h, cell: T.cell, e: clamp((eave - sol) / (top - sol), 0, 1), v };
+    cnt++;
+  }
+  S.hVer++;
+  return cnt;
+}
+/** Profil du toit (0 à 1) en un point du plan ; 1 si toit plat. */
+function roofProfile(c, x, y) {
+  const R = c.roof; if (!R) return 1;
+  const cpx = R.cell * pxPerM(), gx = clamp(x / cpx - R.i0, 0, R.w), gy = clamp(y / cpx - R.j0, 0, R.h);
+  const a = Math.min(R.w - 1, Math.floor(gx)), b = Math.min(R.h - 1, Math.floor(gy)), u = gx - a, t = gy - b, W1 = R.w + 1, v = R.v;
+  return v[b * W1 + a] * (1 - u) * (1 - t) + v[b * W1 + a + 1] * u * (1 - t) + v[(b + 1) * W1 + a] * (1 - u) * t + v[(b + 1) * W1 + a + 1] * u * t;
+}
+/** Altitude du toit (m, relative) : gouttière + profil × (faîtage − gouttière) ; la hauteur max reste réglable. */
+function roofZ(c, x, y) { const hm = nbHeight(c), e = c.roof ? c.roof.e : 1; return nbBase(c) + hm * (e + (1 - e) * roofProfile(c, x, y)); }
 /** Végétation : hauteur (m) = MNS − MNT, hors bâtiments (marge 1,5 m), sans objets isolés (lampadaires, véhicules). */
 function vegFromMNS(mns, T) {
   const n = T.n, cpx = T.cell * pxPerM(), off = 1.5 * pxPerM(), raw = new Float32Array(n * n);
@@ -1840,7 +1922,42 @@ function vegFromMNS(mns, T) {
     if (nb >= 3) { h[k] = raw[k]; cnt++; }
   }
   let max = 0; for (const v of h) if (v > max) max = v;
-  return cnt ? { n, cell: T.cell, h, max, area: cnt * T.cell * T.cell } : null;
+  if (!cnt) return null;
+  return { ...segmentTrees(h, n, T), n, cell: T.cell, max, area: cnt * T.cell * T.cell };
+}
+/** Découpe la canopée en houppiers (ligne de partage des eaux depuis les sommets) ;
+ *  arbres = sommet ≥ 5 m et houppier ≥ 3 m², le reste (haies, arbustes) reste en surface continue. */
+function segmentTrees(h, n, T) {
+  const cell = T.cell, sm = new Float32Array(n * n), idx = [];
+  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+    const k = j * n + i; if (!h[k]) continue;
+    let t = 0, q = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const v = h[k + b * n + a]; if (v) { t += v; q++; } }
+    sm[k] = t / q; idx.push(k);
+  }
+  idx.sort((a, b) => sm[b] - sm[a]);
+  const lab = new Int32Array(n * n), seg = [null];
+  for (const k of idx) {
+    let best = 0, bh = -1;
+    for (const d of [-1, 1, -n, n, -n - 1, -n + 1, n - 1, n + 1]) { const l = lab[k + d]; if (l && sm[k + d] > bh) { bh = sm[k + d]; best = l; } }
+    if (!best) { seg.push({ n: 0, peak: 0, sx: 0, sy: 0 }); best = seg.length - 1; }
+    lab[k] = best; const sg = seg[best]; sg.n++; sg.peak = Math.max(sg.peak, h[k]); sg.sx += k % n; sg.sy += Math.floor(k / n);
+  }
+  // petits fragments rattachés au houppier voisin le plus grand
+  const minN = Math.max(2, Math.round(3 / (cell * cell)));
+  for (const k of idx) {
+    const sg = seg[lab[k]]; if (sg.n >= minN) continue;
+    let best = 0, bn = 0; for (const d of [-1, 1, -n, n]) { const l = lab[k + d]; if (l && l !== lab[k] && seg[l].n > bn) { bn = seg[l].n; best = l; } }
+    if (best) { const s0 = seg[lab[k]]; s0.n--; s0.sx -= k % n; s0.sy -= Math.floor(k / n); const s1 = seg[best]; s1.n++; s1.sx += k % n; s1.sy += Math.floor(k / n); s1.peak = Math.max(s1.peak, h[k]); lab[k] = best; }
+  }
+  const trees = [], hedge = new Float32Array(n * n); let hedgeN = 0;
+  const isTree = seg.map(sg => sg && sg.n * cell * cell >= 3 && sg.peak >= 5);
+  seg.forEach((sg, l) => {
+    if (!isTree[l]) return;
+    const gx = sg.sx / sg.n + 0.5, gy = sg.sy / sg.n + 0.5;
+    trees.push({ x: Math.round(gx * cell * 100) / 100, y: Math.round(gy * cell * 100) / 100, H: Math.round(sg.peak * 10) / 10, R: Math.round(clamp(Math.sqrt(sg.n * cell * cell / Math.PI), 0.8, 12) * 10) / 10 });
+  });
+  for (const k of idx) if (!isTree[lab[k]]) { hedge[k] = h[k]; hedgeN++; }
+  return { trees, h: hedge, hedgeArea: hedgeN * cell * cell };
 }
 /** Convergence des méridiens en Lambert-93 : angle du nord géographique par rapport au haut du plan. */
 const l93North = lon => 0.7256077650 * (3 - lon);
@@ -1857,9 +1974,10 @@ async function loadSite() {
     const px = Math.round(L * Math.min(8, 3000 / L)), ppm = px / L;
     const bb = [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2];
     status('Téléchargement du fond de plan, des bâtiments et du relief (IGN)…', true);
-    const wantTrees = $('cTrees').checked, nT = Math.min(500, Math.ceil(L / 0.5));
-    const [base, feats, terr, mns] = await Promise.all([fetchBase(bb, px, bg), fetchBuildings(bb), fetchTerrain(bb, L).catch(e => { console.warn(e); return null; }),
-      wantTrees ? fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nT, 'Végétation').catch(e => { console.warn(e); return null; }) : null]);
+    const nT = Math.min(500, Math.ceil(L / 0.5));
+    const [lay, feats, terr, mns] = await Promise.all([fetchLayers(bb, px), fetchBuildings(bb), fetchTerrain(bb, L).catch(e => { console.warn(e); return null; }),
+      fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nT, 'Végétation').catch(e => { console.warn(e); return null; })]);
+    const base = composeLayers(lay.L, px);
     const toImg = ([X, Y]) => ({ x: (X - bb[0]) * ppm, y: (bb[3] - Y) * ppm });
     let z0 = 0;
     if (terr) { const c = Math.floor(terr.n / 2); z0 = terr.z[c * terr.n + c]; }
@@ -1867,26 +1985,28 @@ async function loadSite() {
     for (const f of feats) {
       const pr = f.properties || {}, geom = f.geometry; if (!geom) continue;
       if (pr.etat_de_l_objet && pr.etat_de_l_objet !== 'En service') continue;
-      let h = pr.hauteur;
-      if ((h === null || h === undefined) && pr.altitude_maximale_toit != null && pr.altitude_minimale_sol != null) h = pr.altitude_maximale_toit - pr.altitude_minimale_sol;
-      if (!(h > 0)) h = undefined;
+      // hauteur retenue : jusqu'au point le plus haut du toit (faîtage)
+      const sol = pr.altitude_minimale_sol, tmax = pr.altitude_maximale_toit;
+      let h = tmax != null && sol != null ? tmax - sol : pr.hauteur;
+      if (!(h > 0)) h = pr.hauteur > 0 ? pr.hauteur : undefined;
+      const bdt = { sol, tmax, tmin: pr.altitude_minimale_toit != null ? pr.altitude_minimale_toit : sol != null && pr.hauteur != null ? sol + pr.hauteur : null };
       const polys = geom.type === 'MultiPolygon' ? geom.coordinates : geom.type === 'Polygon' ? [geom.coordinates] : [];
       for (const poly of polys) {
         const rings = poly.map(r => { const pts = r.map(toImg); if (pts.length > 1 && dist(pts[0], pts[pts.length - 1]) < 1e-6) pts.pop(); return pts; }).filter(r => r.length >= 3);
         if (!rings.length) continue;
         const base = pr.altitude_minimale_sol != null && terr ? pr.altitude_minimale_sol - z0 : undefined;
-        blds.push({ rings, h: h !== undefined ? Math.round(h * 10) / 10 : undefined, bd: h, base, nature: pr.nature + (pr.construction_legere ? ' (légère)' : '') });
+        blds.push({ rings, h: h !== undefined ? Math.round(h * 10) / 10 : undefined, bd: h, base, bdt, nature: pr.nature + (pr.construction_legere ? ' (légère)' : '') });
       }
     }
     const prevSite = S.site, prevPpm = pxPerM();
-    const jpg = bg === 'ortho';
-    const dataURL = base.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.9);
+    const dataURL = null;   // l'image est produite à l'enregistrement
     S.site = { label: g.label, L, bg, x0: bb[0], y1: bb[3], lon: g.lon, lat: g.lat, z0, terrSrc: terr ? terr.src : null };
     S.terrain = terr ? { n: terr.n, cell: terr.cell, z: terr.z, z0, src: terr.src } : null;
     S.lat = Math.round(g.lat * 1e4) / 1e4; S.lon = Math.round(g.lon * 1e4) / 1e4; S.tzStd = 1; S.dstAuto = true;
     S.north = Math.round(l93North(g.lon) * 100) / 100;
     // immeubles projetés conservés : même position géographique si possible, sinon même disposition au centre
     const oldB = S.buildings.map(b => ({ ...b })), oldSite = prevSite, oldPpm = prevPpm;
+    S.layers = lay.L;
     setImage(base, dataURL, g.label.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'site', false, { blds, L });
     if (enter3D()) { G.cam.pitch = 50 * D2R; G.cam.yaw = 0; fit3d(); G.cam.dist *= 0.8; changed(); }
     if (oldB.length) {
@@ -1902,16 +2022,19 @@ async function loadSite() {
       }
       const sel = S.sel; S.buildings = nb.map(normB); S.sel = clamp(sel, 0, nb.length - 1); S.dH = S.height;
     }
-    S.veg = mns && S.terrain && /LiDAR/.test(S.terrain.src) ? vegFromMNS(mns, S.terrain) : null; G.vegKey = '';
+    const lidar = mns && S.terrain && /LiDAR/.test(S.terrain.src);
+    const nRoof = lidar ? computeRoofs(mns, S.terrain) : 0; G.nbKey = '';
+    S.veg = lidar ? vegFromMNS(mns, S.terrain) : null; G.vegKey = '';
     const nh = NB.list.filter(c => c.h !== undefined).length;
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
-      (S.veg ? ', arbres : ' + fmtNum(S.veg.area, 0) + ' m² de couvert' : wantTrees ? ', arbres indisponibles (pas de LiDAR ici)' : '') +
+      (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche manquante : ' + lay.errs.join(' ; ') : '') +
       '. Placez votre immeuble (vert) et ajustez sa taille.', true);
   } catch (e) {
     console.error(e); status('Chargement du site impossible : ' + e.message, true); alert('Chargement du site impossible.\n' + e.message);
   } finally { btn.disabled = false; }
 }
 $('btnSite').onclick = loadSite;
+const canvasURL = (c, jpg) => c.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.88);
 $('addr').addEventListener('keydown', e => { if (e.key === 'Enter') loadSite(); e.stopPropagation(); });
 // enregistrement : relief en base64 (Float32), bâtiments en coordonnées du plan
 function f32ToB64(a) { const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
@@ -1919,18 +2042,22 @@ function b64ToF32(b) { const s = atob(b), u = new Uint8Array(s.length); for (let
 function siteForSave() {
   if (!S.site || !NB) return null;
   const r1 = v => Math.round(v * 100) / 100;
+  const Ls = S.layers || {};
   return {
     ...S.site,
+    layers: { plan: Ls.plan ? canvasURL(Ls.plan) : null, ortho: Ls.ortho ? canvasURL(Ls.ortho, true) : null, cad: Ls.cad ? canvasURL(Ls.cad) : null },
     terrain: S.terrain ? { n: S.terrain.n, cell: S.terrain.cell, z0: S.terrain.z0, src: S.terrain.src, z: f32ToB64(S.terrain.z) } : null,
-    veg: S.veg ? { n: S.veg.n, cell: S.veg.cell, area: S.veg.area, max: S.veg.max, h: f32ToB64(S.veg.h) } : null,
-    blds: NB.list.map(c => ({ rings: c.loops.map(r => r.map(p => [r1(p.x), r1(p.y)])), h: c.h, bd: c.bd, base: c.base, nature: c.nature }))
+    veg: S.veg ? { n: S.veg.n, cell: S.veg.cell, area: S.veg.area, max: S.veg.max, hedgeArea: S.veg.hedgeArea, trees: S.veg.trees, h: f32ToB64(S.veg.h) } : null,
+    blds: NB.list.map(c => ({ rings: c.loops.map(r => r.map(p => [r1(p.x), r1(p.y)])), h: c.h, bd: c.bd, base: c.base, nature: c.nature, bdt: c.bdt,
+      roof: c.roof ? { i0: c.roof.i0, j0: c.roof.j0, w: c.roof.w, h: c.roof.h, cell: c.roof.cell, e: c.roof.e, v: btoa(Array.from(c.roof.v, x => String.fromCharCode(Math.round(x * 255))).join('')) } : undefined }))
   };
 }
 function siteFromSave(st) {
   S.site = { label: st.label, L: st.L, bg: st.bg, x0: st.x0, y1: st.y1, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc };
   S.terrain = st.terrain ? { n: st.terrain.n, cell: st.terrain.cell, z0: st.terrain.z0, src: st.terrain.src, z: b64ToF32(st.terrain.z) } : null;
-  S.veg = st.veg ? { n: st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
-  return { L: st.L, blds: st.blds.map(b => ({ ...b, rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
+  S.veg = st.veg ? { n: st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, hedgeArea: st.veg.hedgeArea || 0, trees: st.veg.trees || [], h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
+  const roofIn = R => { if (!R) return undefined; const s = atob(R.v), v = new Float32Array(s.length); for (let i = 0; i < s.length; i++) v[i] = s.charCodeAt(i) / 255; return { ...R, v }; };
+  return { L: st.L, blds: st.blds.map(b => ({ ...b, roof: roofIn(b.roof), rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
 }
 
 
@@ -1999,6 +2126,7 @@ function drawDials(ctx, W, H, n, sun) {
   return L;
 }
 /** Partie du cadran visée (coordonnées écran du canevas). */
+const underDials = (rc, W = CW, H = CH) => { const d = dialLayout(W, H).rect; return rc.x < d.x + d.w && rc.x + rc.w > d.x && rc.y < d.y + d.h && rc.y + rc.h > d.y; };
 function dialHit(p) {
   const L = dialLayout();
   if (Math.hypot(p.x - L.cx, p.y - L.cy) <= L.R + 6) return 'compass';
@@ -2068,27 +2196,35 @@ out vec3 vPos; out vec3 vNor; out vec4 vCol; out float vId; out vec4 vL;
 void main() { vPos = aPos; vNor = aNor; vCol = aCol; vId = aId; vL = uLVP * vec4(aPos + aNor * uNOff, 1.0); gl_Position = uVP * vec4(aPos, 1.0); }`;
 const FS_MAIN = `#version 300 es
 precision highp float; precision highp sampler2DShadow;
-uniform sampler2D uPlan; uniform sampler2DShadow uShadow;
-uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel;
+uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
+uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
+uniform float uBright; uniform float uContrast; uniform float uTreeOpa;
 in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL;
 out vec4 oCol;
 ${GLSL_ID}
+float pcf(sampler2DShadow sm, vec3 p, float tx) {
+  float s = 0.0;
+  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) s += texture(sm, vec3(p.xy + vec2(float(i), float(j)) * tx, p.z - 0.0003));
+  return s / 9.0;
+}
 float lit() {
   if (uSunUp < 0.5) return 0.0;
   vec3 p = vL.xyz / vL.w * 0.5 + 0.5;
   if (p.x <= 0.0 || p.x >= 1.0 || p.y <= 0.0 || p.y >= 1.0 || p.z >= 1.0) return 1.0;
-  float s = 0.0;
-  for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) s += texture(uShadow, vec3(p.xy + vec2(float(i), float(j)) * uTexel, p.z - 0.0003));
-  return s / 9.0;
+  // ombre des arbres atténuée selon leur opacité (carte d'ombre séparée)
+  return pcf(uShadow, p, uTexel) * (1.0 - uTreeOpa * (1.0 - pcf(uShadowT, p, uTexelT)));
 }
 void main() {
   if (vId > 0.5 && abs(idAt(vPos.xz) - vId) > 0.5) discard;
   vec3 n = normalize(vNor);
   float nd = dot(n, uSun), l = nd > 0.0 ? lit() : 0.0, k;
-  vec3 base = vCol.a < 0.5 ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
+  // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
+  bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
+  vec3 base = tex ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
+  if (tex || tree) base = clamp((base * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste
   if (n.y > 0.5) k = mix(0.6, 1.0, l);                    // sol et toits
   else k = 0.5 + 0.5 * l * (0.35 + 0.65 * max(nd, 0.0));  // murs
-  oCol = vec4(base * k, 1.0);
+  oCol = vec4(base * k, crown ? uTreeOpa : 1.0);
 }`;
 const VS_DEPTH = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=3) in float aId;
@@ -2123,6 +2259,14 @@ function initGL() {
       [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE], [gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     G.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shadowTex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    G.sm2 = Math.min(2048, G.sm);
+    G.shadowTex2 = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex2);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, G.sm2, G.sm2);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
+      [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE], [gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    G.fbo2 = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo2);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shadowTex2, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     G.planTex = gl.createTexture(); G.idsTex = gl.createTexture();
     G.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
@@ -2190,10 +2334,12 @@ function drawBuf(name) {
   gl.drawArrays(gl.TRIANGLES, 0, b.n);
 }
 const WALL = [0.93, 0.72, 0.43, 1], GREEN = [0.13, 0.64, 0.29, 1], GREEN_TOP = [0.25, 0.78, 0.4, 1], PLINTH = [0.66, 0.56, 0.45, 1];
-const TREE = [0.27, 0.47, 0.2, 1];
+const TREE = [0.27, 0.47, 0.2, 0.6], TRUNK = [0.42, 0.31, 0.2, 0.7];
 function buildVeg() {
   const V = S.veg, ppm = pxPerM(); if (!V) { if (G.bufs.veg) setBuf('veg', new Geo()); G.vegKey = ''; return; }
   if (G.vegKey === V && G.vegPpm === ppm) return; G.vegKey = V; G.vegPpm = ppm;
+  const g = new Geo();
+  for (const t of V.trees || []) treeGeo(g, t, ppm);
   // canopée en surface continue (≤ 250 × 250 mailles) : bords qui retombent au sol
   const st = Math.ceil(V.n / 250), m = Math.floor(V.n / st), cpx = V.cell * st * ppm, hh = new Float32Array(m * m);
   for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
@@ -2201,7 +2347,6 @@ function buildVeg() {
     hh[j * m + i] = mx;
   }
   const H = (i, j) => { i = clamp(i, 0, m - 1); j = clamp(j, 0, m - 1); const x = (i + 0.5) * cpx, z = (j + 0.5) * cpx, v = hh[j * m + i]; return (terrainAt(x, z) + (v > 0 ? v : -0.3)) * ppm; };
-  const g = new Geo();
   for (let j = 0; j < m - 1; j++) for (let i = 0; i < m - 1; i++) {
     if (!(hh[j * m + i] || hh[j * m + i + 1] || hh[(j + 1) * m + i] || hh[(j + 1) * m + i + 1])) continue;
     const P = (a, b) => [(a + 0.5) * cpx, H(a, b), (b + 0.5) * cpx];
@@ -2210,6 +2355,25 @@ function buildVeg() {
   }
   setBuf('veg', g);
 }
+/** Arbre : tronc jusqu'au quart de la hauteur, houppier qui s'évase dès le tiers. */
+const TREE_PROF = [[0.25, 0.1], [0.33, 0.82], [0.42, 0.97], [0.55, 1], [0.7, 0.92], [0.83, 0.7], [0.93, 0.38], [1, 0]];
+function treeGeo(g, t, ppm) {
+  const N = 8, x = t.x * ppm, z = t.y * ppm, y0 = (terrainAt(x, z) - 0.3) * ppm, Hp = t.H * ppm, R = t.R * ppm, rt = clamp(0.06 * t.R, 0.12, 0.45) * ppm;
+  const ring = (k, r, y) => { const a = k / N * 2 * Math.PI; return [x + Math.cos(a) * r, y, z + Math.sin(a) * r]; };
+  for (let k = 0; k < N; k++) {   // tronc
+    const a0 = (k + 0.5) / N * 2 * Math.PI, nn = [Math.cos(a0), 0, Math.sin(a0)];
+    g.quad(ring(k, rt, y0), ring(k + 1, rt, y0), ring(k + 1, rt, y0 + 0.27 * Hp), ring(k, rt, y0 + 0.27 * Hp), nn, TRUNK);
+  }
+  for (let s = 0; s + 1 < TREE_PROF.length; s++) {   // houppier (révolution du profil)
+    const [f0, q0] = TREE_PROF[s], [f1, q1] = TREE_PROF[s + 1];
+    const ya = y0 + f0 * Hp, yb = y0 + f1 * Hp, ra = q0 * R, rb = q1 * R, sl = (ra - rb) / Math.max(1e-6, yb - ya);
+    for (let k = 0; k < N; k++) {
+      const n0 = v3.norm([Math.cos(k / N * 2 * Math.PI), sl, Math.sin(k / N * 2 * Math.PI)]), n1 = v3.norm([Math.cos((k + 1) / N * 2 * Math.PI), sl, Math.sin((k + 1) / N * 2 * Math.PI)]);
+      const P0 = ring(k, ra, ya), P1 = ring(k + 1, ra, ya), P2 = ring(k + 1, rb, yb), P3 = ring(k, rb, yb);
+      g.v(P0, n0, TREE, 0); g.v(P1, n1, TREE, 0); g.v(P2, n1, TREE, 0); g.v(P0, n0, TREE, 0); g.v(P2, n1, TREE, 0); g.v(P3, n0, TREE, 0);
+    }
+  }
+}
 const nbBase = c => c.base !== undefined ? c.base : 0;   // altitude du pied (m, relative au point de référence)
 function buildNeighbors() {
   const ppm = pxPerM(), key = [NB ? NB.ver : 0, S.hVer, S.defH, ppm, S.terrain ? 1 : 0].join('|');
@@ -2217,15 +2381,29 @@ function buildNeighbors() {
   const g = new Geo(), T = !!S.terrain;
   if (NB) for (const c of NB.list) {
     const hm = nbHeight(c); if (hm <= 0) continue;
-    const top = (nbBase(c) + hm) * ppm;
+    const top = (nbBase(c) + hm) * ppm, R = c.roof, seg = R ? R.cell * ppm : 1e9;
     for (const lp of c.loops) lp.forEach((p, i) => {
-      const q = lp[(i + 1) % lp.length], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1;
-      // pied des murs posé sur le relief (un peu enterré pour ne pas laisser de jour)
-      const bp = T ? (terrainAt(p.x, p.y) - 0.5) * ppm : 0, bq = T ? (terrainAt(q.x, q.y) - 0.5) * ppm : 0;
-      g.quad([p.x, Math.min(bp, top), p.y], [q.x, Math.min(bq, top), q.y], [q.x, top, q.y], [p.x, top, p.y], [-dy / L, 0, dx / L], WALL);
+      const q = lp[(i + 1) % lp.length], dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy) || 1, nn = [-dy / L, 0, dx / L];
+      // mur découpé en tronçons : le haut suit le toit (pignons), le pied suit le relief
+      const ns = Math.max(1, Math.ceil(L / seg));
+      for (let k = 0; k < ns; k++) {
+        const a = { x: p.x + dx * k / ns, y: p.y + dy * k / ns }, b = { x: p.x + dx * (k + 1) / ns, y: p.y + dy * (k + 1) / ns };
+        const ta = R ? roofZ(c, a.x, a.y) * ppm : top, tb = R ? roofZ(c, b.x, b.y) * ppm : top;
+        const ba = T ? (terrainAt(a.x, a.y) - 0.5) * ppm : 0, bb = T ? (terrainAt(b.x, b.y) - 0.5) * ppm : 0;
+        g.quad([a.x, Math.min(ba, ta), a.y], [b.x, Math.min(bb, tb), b.y], [b.x, tb, b.y], [a.x, ta, a.y], nn, WALL);
+      }
     });
-    // toit : rectangle englobant, découpé au pixel près par la carte des constructions ; texture = plan
-    g.quad([c.x0, top, c.y0], [c.x1, top, c.y0], [c.x1, top, c.y1], [c.x0, top, c.y1], [0, 1, 0], [0, 0, 0, 0], c.id);
+    if (!R) {   // toit plat : rectangle englobant, découpé au pixel près par la carte des constructions ; texture = plan
+      g.quad([c.x0, top, c.y0], [c.x1, top, c.y0], [c.x1, top, c.y1], [c.x0, top, c.y1], [0, 1, 0], [0, 0, 0, 0], c.id);
+      continue;
+    }
+    // toit en pente : maillage sur la grille du LiDAR, découpé de même
+    const cp = R.cell * ppm, Z = (a, b) => roofZ(c, (R.i0 + a) * cp, (R.j0 + b) * cp) * ppm;
+    const Vt = (a, b) => [(R.i0 + a) * cp, Z(a, b), (R.j0 + b) * cp];
+    const Nt = (a, b) => v3.norm([-(Z(Math.min(R.w, a + 1), b) - Z(Math.max(0, a - 1), b)) / (2 * cp), 1, -(Z(a, Math.min(R.h, b + 1)) - Z(a, Math.max(0, b - 1))) / (2 * cp)]);
+    const C0 = [0, 0, 0, 0];
+    for (let b = 0; b < R.h; b++) for (let a = 0; a < R.w; a++)
+      for (const [u, w] of [[a, b], [a + 1, b], [a + 1, b + 1], [a, b], [a + 1, b + 1], [a, b + 1]]) g.v(Vt(u, w), Nt(u, w), C0, c.id);
   }
   setBuf('nb', g);
 }
@@ -2309,7 +2487,10 @@ function draw3d() {
   gl.uniform1i(G.depth.u.uIds, 1); gl.uniform1f(G.depth.u.uIdScale, NB ? NB.f : 1);
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3);
   if (S.terrain) drawBuf('ground');   // le relief porte aussi des ombres
-  drawBuf('nb'); drawBuf('proj'); if (S.showTrees) drawBuf('veg');
+  drawBuf('nb'); drawBuf('proj');
+  // carte d'ombre des arbres
+  gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo2); gl.viewport(0, 0, G.sm2, G.sm2); gl.clear(gl.DEPTH_BUFFER_BIT);
+  if (S.showTrees) drawBuf('veg');
   gl.disable(gl.POLYGON_OFFSET_FILL);
   // passe 2 : rendu
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -2323,7 +2504,16 @@ function draw3d() {
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.planTex); gl.uniform1i(m.u.uPlan, 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.idsTex); gl.uniform1i(m.u.uIds, 1); gl.uniform1f(m.u.uIdScale, NB ? NB.f : 1);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex); gl.uniform1i(m.u.uShadow, 2);
-  drawBuf('ground'); drawBuf('nb'); drawBuf('proj'); if (S.showTrees) drawBuf('veg');
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex2); gl.uniform1i(m.u.uShadowT, 3);
+  const opa = 1 - S.treeT / 100;
+  gl.uniform1f(m.u.uTexelT, 1 / G.sm2); gl.uniform1f(m.u.uTreeOpa, opa);
+  gl.uniform1f(m.u.uBright, 1 + S.bright / 100); gl.uniform1f(m.u.uContrast, S.contrast / 100);
+  drawBuf('ground'); drawBuf('nb'); drawBuf('proj');
+  if (S.showTrees) {   // arbres en dernier : feuillage éventuellement transparent
+    if (opa < 0.999) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false); }
+    drawBuf('veg');
+    gl.disable(gl.BLEND); gl.depthMask(true);
+  }
   overlay3d(ci, sun);
 }
 function toScreen3(VP, p, cw = CW, ch = CH) {
@@ -2340,6 +2530,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
     const a = toScreen3(ci.VP, [c.x0, yy, c.y0]), e = toScreen3(ci.VP, [c.x1, yy, c.y1]);
     if (!a || !e || Math.hypot(e.x - a.x, e.y - a.y) < 34) continue;   // trop petit à l'écran
     const t = fmtLen(c.h) + ' m', w = ctx.measureText(t).width + 10, rc = { x: q.x - w / 2, y: q.y - 9, w, h: 18 };
+    if (underDials(rc)) continue;
     P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
   }
   for (const b of S.buildings) {

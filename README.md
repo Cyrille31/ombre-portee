@@ -11,10 +11,10 @@ L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir 
 
 Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la taille du carré (100 à 800 m) et le fond de plan, puis cliquez sur **Charger le site**. Le logiciel télécharge auprès de l'IGN (Géoplateforme, gratuit, sans compte) :
 
-- le **fond de plan** (plan IGN, photo aérienne ou cadastre), à l'échelle exacte, nord en haut ;
-- les **bâtiments** de la BD TOPO, avec leur contour exact, leur hauteur et l'altitude de leur pied ;
+- le **fond de plan** : plan IGN, photo aérienne et cadastre, à l'échelle exacte, nord en haut. Le fond (plan, photo ou blanc) et le cadastre se changent aussitôt, sans recharger ;
+- les **bâtiments** de la BD TOPO, avec leur contour exact, leur hauteur jusqu'au faîtage et l'altitude de leur pied. Là où le LiDAR existe, la **forme du toit** (pentes, pignons) est tirée du modèle de surface ; la hauteur maximale reste réglable par clic droit ;
 - le **relief** : modèle de terrain LiDAR HD au demi-mètre, complété par le RGE ALTI là où le LiDAR manque.
-- les **arbres** (option) : hauteur de la végétation = modèle de surface LiDAR HD − terrain, hors bâtiments. Ils portent et reçoivent les ombres en 3D ; la case « Arbres » du bloc Affichage les masque.
+- les **arbres** : hauteur de la végétation = modèle de surface LiDAR HD − terrain, hors bâtiments. Chaque houppier est repéré et dessiné en arbre (tronc jusqu'au quart de la hauteur, houppier qui s'évase dès le tiers) ; haies et arbustes restent en masse continue. La case « Arbres » les affiche ou les masque aussitôt, et « Transparence arbres » atténue leur feuillage et leurs ombres (arbres dénudés en hiver).
 
 La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (rectangle vert, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
@@ -48,6 +48,9 @@ Le lieu par défaut est Toulouse.
 | Panneau de gauche | Cliquer sur le titre d'un bloc (Immeuble, Lieu et orientation…) pour le replier ou le déplier. |
 | Vue 3D | Bouton « 3D », ou **Maj + glisser** sur le plan. En 3D : Maj + glisser (ou clic droit + glisser) pour pivoter et incliner, glisser pour déplacer la vue, glisser l'immeuble pour le déplacer, molette pour zoomer. « Vue de dessus » remet le nord en haut. Les ombres de l'instant courant sont projetées sur le sol et sur les bâtiments. |
 | Hauteur des constructions voisines | **Clic droit** sur une construction (en 2D ou en 3D) : une fenêtre demande sa hauteur, réglable à la molette. La hauteur reste affichée sur la construction. Un nouveau clic droit permet de la modifier ou de la supprimer. « Hauteur par défaut » s'applique aux constructions sans hauteur saisie (0 = à plat). |
+| Plusieurs immeubles | « Dessiner un immeuble » en ajoute un, « + Copie » duplique l'immeuble sélectionné, « Supprimer » l'enlève. Clic sur un immeuble pour le sélectionner (boutons n° 1, n° 2… dans le panneau). Chacun a sa hauteur et son niveau. Ils sont conservés quand on recharge le site. |
+| Boussole et cadran solaire | En haut à droite du plan. Glisser l'ombre du style du cadran change l'heure ; un clic le remet à midi solaire. En 3D, glisser l'aiguille fait tourner la vue et un clic remet le nord en haut ; en 2D, l'aiguille règle le « Nord du plan » et un clic revient à la valeur d'origine. |
+| Fond | « Luminosité » et « Contraste du fond » (bloc Affichage) éclaircissent ou assombrissent le fond et les arbres, utile avec la photo aérienne. Double-clic sur un curseur pour revenir à la valeur par défaut. |
 | Animer | « ▶ Animer la journée » (la nuit est sautée). |
 | Zoom et déplacement du plan | Molette sur le plan pour zoomer. Glisser le fond, ou clic droit, pour déplacer la vue. |
 | Clavier | ←/→ ±15 min · ↑/↓ ±1 jour · PgPréc/PgSuiv ±1 mois · +/− hauteur · Espace : animer · Échap : annuler |
