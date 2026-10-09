@@ -121,6 +121,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
 
   <section>
     <h2>Immeuble</h2>
+    <div class="row" id="bldList"></div>
     <div class="f"><span class="lbl drag" data-for="iH"><b>Hauteur</b></span><input type="text" id="iH" class="big"><span class="u">m</span><span id="levels" class="hint"></span></div>
     <div class="f"><span class="lbl drag" data-for="iDz">Niveau / terrain</span><input type="text" id="iDz"><span class="u">m</span></div>
     <div class="hint">Sol en pente : niveau du pied de l'immeuble par rapport au terrain où tombe l'ombre (+ = plus haut). L'ombre est celle d'une hauteur H + niveau.</div>
@@ -130,7 +131,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="f"><span class="lbl">Emprise au sol</span><b id="footprint"></b></div>
     <div class="hint">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
     <div class="row">
-      <button id="btnDraw">Dessiner un immeuble</button>
+      <button id="btnDraw" title="Tracer un nouvel immeuble sur le plan">Dessiner un immeuble</button>
+      <button id="btnAddB" title="Ajoute une copie de l'immeuble sélectionné, à côté">+ Copie</button>
+      <button id="btnDelB" class="small" title="Supprime l'immeuble sélectionné">Supprimer</button>
       <button id="btnResetB">Position d'origine</button>
     </div>
   </section>
@@ -286,7 +289,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  building: null, height: 15, dH: 15, dz: 0, solarPresets: false, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, bright: 0, contrast: 100, treeOpa: 100, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -296,6 +299,21 @@ const S = {
   dirty: true
 };
 const V = { s: 1, ox: 0, oy: 0 };
+// Immeubles projetés : S.buildings ; S.building, S.height et S.dz désignent l'immeuble sélectionné
+let bidSeq = 0;
+S.buildings = []; S.sel = -1; S._h = 15; S._dz = 0;
+function normB(v) { return { id: v.id || ++bidSeq, cx: v.cx, cy: v.cy, w: v.w, l: v.l, a: v.a || 0, h: v.h !== undefined ? v.h : S._h, dz: v.dz !== undefined ? v.dz : S._dz }; }
+Object.defineProperties(S, {
+  building: { configurable: true, get() { return this.buildings[this.sel] || null; }, set(v) { this.buildings = v ? [normB(v)] : []; this.sel = v ? 0 : -1; } },
+  height: { configurable: true, get() { const b = this.building; return b ? b.h : this._h; }, set(v) { const b = this.building; if (b) b.h = v; this._h = v; } },
+  dz: { configurable: true, get() { const b = this.building; return b ? b.dz : this._dz; }, set(v) { const b = this.building; if (b) b.dz = v; this._dz = v; } }
+});
+function selectBuilding(i) { if (i === S.sel || !S.buildings[i]) return; S.sel = i; S.dH = S.height; changed(); }
+function addBuilding(v) { const b = normB(v); S.buildings.push(b); S.sel = S.buildings.length - 1; S.dH = b.h; changed(); return b; }
+/** Hauteur effective (m) de l'ombre d'un immeuble sur sol plat : H + niveau. */
+/** Filtre du fond (luminosité, contraste) : 2D (filtre canvas) et 3D (shader). */
+const bgFilter = () => 'brightness(' + (100 + S.bright) + '%) contrast(' + S.contrast + '%)';
+const hOf = b => Math.max(0, (b === S.building ? S.dH : b.h) + b.dz);
 
 /* --------------------------------------------------- Position du Soleil (NOAA) */
 function sunPos(jd, utcMin, lat, lon) {
@@ -792,10 +810,12 @@ function render(ctx, W, H, v, opt = {}) {
     ctx.fillText('ou essayez le « Plan de démonstration ».', W / 2, H / 2 + 14);
     return;
   }
-  const b = S.building, ppm = pxPerM(), hM = Math.max(0, S.dH + S.dz), sun = curSun(), px = 1 / v.s;
+  const b = S.building, BL = S.buildings, ppm = pxPerM(), hM = b ? hOf(b) : 0, sun = curSun(), px = 1 / v.s;
+  // ombres de tous les immeubles en un seul tracé (union : pas de double assombrissement)
+  const shadowsPath = s => { ctx.beginPath(); let any = false; for (const bb of BL) { const so = shadowOffset(s, hOf(bb)); if (!so) continue; any = true; shadowPoly(bb, so).forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
   ctx.save(); ctx.setTransform(k * v.s, 0, 0, k * v.s, k * v.ox, k * v.oy);
   ctx.imageSmoothingEnabled = v.s < 3;
-  ctx.drawImage(S.clean, 0, 0);
+  ctx.filter = bgFilter(); ctx.drawImage(S.clean, 0, 0); ctx.filter = 'none';
   if (S.showOrig && S.origRect && b && (Math.abs(b.cx - S.origRect.cx) + Math.abs(b.cy - S.origRect.cy) + Math.abs(b.w - S.origRect.w) + Math.abs(b.l - S.origRect.l) + Math.abs(b.a - S.origRect.a) * 100 > 0.5)) {
     polyPath(ctx, corners(S.origRect)); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = 'rgba(21,128,61,0.7)'; ctx.lineWidth = 1.5 * px; ctx.stroke(); ctx.setLineDash([]);
   }
@@ -804,14 +824,16 @@ function render(ctx, W, H, v, opt = {}) {
     if (S.showScenario) S.scenario.forEach((e, i) => {
       const off = offsetFor(e.day, e.minute, e.utc), s = sunFor(e.day, e.minute, off), so = shadowOffset(s, hM), col = SC_COLORS[i % SC_COLORS.length];
       const poly = so ? shadowPoly(b, so) : null;
-      if (so) { polyPath(ctx, poly); ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
+      if (shadowsPath(s)) { ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
       scen.push({ e, so, col, poly });
     });
     if (!S.showScenario || !S.scenario.length || S.showCurrent) {
-      const so = shadowOffset(sun, hM);
-      if (so) { polyPath(ctx, shadowPoly(b, so)); ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
+      if (shadowsPath(sun)) { ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
     }
-    polyPath(ctx, corners(b)); ctx.fillStyle = 'rgba(22,163,74,0.82)'; ctx.fill(); ctx.strokeStyle = BLD_DARK; ctx.lineWidth = 2 * px; ctx.stroke();
+    for (const bb of BL) {
+      polyPath(ctx, corners(bb)); ctx.fillStyle = bb === b ? 'rgba(22,163,74,0.85)' : 'rgba(22,163,74,0.6)'; ctx.fill();
+      ctx.strokeStyle = BLD_DARK; ctx.lineWidth = (bb === b ? 2 : 1.2) * px; ctx.stroke();
+    }
   }
   ctx.restore();
   ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -828,10 +850,16 @@ function render(ctx, W, H, v, opt = {}) {
     }
   }
   let bS = null;
-  if (b) {
-    bS = corners(b).map(p => toS(p, v));
-    const xs = bS.map(p => p.x), ys = bS.map(p => p.y);
+  for (const bb of BL) {
+    const cs = corners(bb).map(p => toS(p, v)); if (bb === b) bS = cs;
+    const xs = cs.map(p => p.x), ys = cs.map(p => p.y);
     P.add({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) });
+  }
+  // hauteur des autres immeubles projetés
+  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (const bb of BL) if (bb !== b && Math.min(bb.w, bb.l) * v.s > 30) {
+    const q = toS({ x: bb.cx, y: bb.cy }, v); ctx.fillStyle = '#fff';
+    ctx.fillText('H ' + fmtLen(bb.h) + ' m' + (bb.dz ? ' (' + (bb.dz > 0 ? '+' : '−') + fmtLen(Math.abs(bb.dz)) + ')' : ''), q.x, q.y);
   }
 
   // segment d'échelle
@@ -849,8 +877,8 @@ function render(ctx, W, H, v, opt = {}) {
 
   // trajectoires
   if (b) S.traj.forEach((t, ti) => {
-    const col = TR_COLORS[ti % TR_COLORS.length];
-    const Pw = localToWorld(b, t.u * b.w, t.v * b.l);
+    const col = TR_COLORS[ti % TR_COLORS.length], tb = BL.find(x => x.id === t.bid) || b, hM = hOf(tb);
+    const Pw = localToWorld(tb, t.u * tb.w, t.v * tb.l);
     const day = S.dDay, segs = []; let seg = [];
     const ticks = [];
     for (let m = 0; m <= 1440; m += 3) {
@@ -1009,9 +1037,10 @@ function hitTest(p) {
     for (const h of hs) if (h.kind === 'size') { const d = Math.hypot(h.x - p.x, h.y - p.y); if (d < bd) { bd = d; best = h; } }
     if (best) return best;
   }
-  const w = toW(p), l = worldToLocal(b, w.x, w.y);
-  if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'move' };
-  return null;
+  const w = toW(p), inB = bb => { const l = worldToLocal(bb, w.x, w.y); return Math.abs(l.x) <= bb.w / 2 && Math.abs(l.y) <= bb.l / 2; };
+  if (inB(b)) return { kind: 'move', bi: S.sel };
+  const i = S.buildings.findIndex(inB);
+  return i >= 0 ? { kind: 'move', bi: i } : null;
 }
 function cursorFor(h) {
   if (!h) return S.mode === 'select' ? 'default' : 'crosshair';
@@ -1049,12 +1078,14 @@ cv.addEventListener('pointerdown', e => {
       let u, v;
       if (ci >= 0) { u = [-0.5, 0.5, 0.5, -0.5][ci]; v = [-0.5, -0.5, 0.5, 0.5][ci]; }
       else { const l = worldToLocal(b, w.x, w.y); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) { u = l.x / b.w; v = l.y / b.l; } }
-      if (u !== undefined) { S.traj.push({ u, v, corner: ci >= 0 }); changed(); status('Trajectoire ajoutée. Cliquez sur un autre point, ou Échap pour terminer.', true); return; }
+      if (u !== undefined) { S.traj.push({ u, v, corner: ci >= 0, bid: b.id }); changed(); status('Trajectoire ajoutée. Cliquez sur un autre point, ou Échap pour terminer.', true); return; }
     }
     return pan();
   }
-  const h = hitTest(p), b = S.building;
+  const h = hitTest(p);
   if (!h) return pan();
+  if (h.kind === 'move') selectBuilding(h.bi);
+  const b = S.building;
   if (h.kind === 'move') drag = { type: 'move', sx: w.x, sy: w.y, cx: b.cx, cy: b.cy };
   else if (h.kind === 'rot') drag = { type: 'rot', a0: b.a, t0: Math.atan2(w.y - b.cy, w.x - b.cx) };
   else drag = { type: 'size', hx: h.hx, hy: h.hy, F: localToWorld(b, -h.hx * b.w / 2, -h.hy * b.l / 2) };
@@ -1090,13 +1121,14 @@ cv.addEventListener('pointerup', e => {
     const p = evPos(e);
     if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 4) {
       const w = toW(p), h = S.building && hitTest(p), c = nbAt(w.x, w.y);
+      if (h && h.kind === 'move') selectBuilding(h.bi);
       heightPopupFor(h && h.kind === 'move' ? { kind: 'proj' } : c ? { kind: 'nb', c } : null, e.clientX, e.clientY);
     }
   }
   if (drag.type === 'draw') {
     const { p1, p2 } = S.temp; S.temp = null;
     if (Math.abs(p2.x - p1.x) * V.s > 5 && Math.abs(p2.y - p1.y) * V.s > 5) {
-      S.building = longSide({ cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 });
+      addBuilding(longSide({ cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 }));
       setMode('select');
     }
   }
@@ -1232,8 +1264,17 @@ $('cShowTrees').onchange = e => { S.showTrees = e.target.checked; changed(); };
 $('rOpa').oninput = e => { S.opacity = +e.target.value; changed(); };
 
 // immeuble, échelle, modes
+$('btnAddB').onclick = () => {
+  const b = S.building; if (!b) return $('btnDraw').onclick();
+  const d = b.w * 1.3; addBuilding({ ...b, id: 0, cx: b.cx + Math.cos(b.a) * d, cy: b.cy + Math.sin(b.a) * d });
+};
+$('btnDelB').onclick = () => {
+  if (!S.building) return;
+  const id = S.building.id; S.buildings.splice(S.sel, 1); S.traj = S.traj.filter(t => t.bid !== id);
+  S.sel = Math.min(S.sel, S.buildings.length - 1); S.dH = S.height; changed();
+};
 $('btnDraw').onclick = () => { if (!S.clean) return alert('Ouvrez d\'abord un plan.'); setMode(S.mode === 'draw' ? 'select' : 'draw'); };
-$('btnResetB').onclick = () => { if (S.origRect) { S.building = { ...S.origRect }; changed(); } else alert('Pas de rectangle vert d\'origine sur ce plan.'); };
+$('btnResetB').onclick = () => { if (S.origRect) { if (S.building) Object.assign(S.building, { cx: S.origRect.cx, cy: S.origRect.cy, w: S.origRect.w, l: S.origRect.l, a: S.origRect.a }); else addBuilding(S.origRect); changed(); } else alert('Pas de rectangle vert d\'origine sur ce plan.'); };
 $('btnScale').onclick = () => { if (!S.clean) return; setMode(S.mode === 'scale' ? 'select' : 'scale'); };
 $('btnOcr').onclick = () => ocrScale(false);
 $('btnScaleClear').onclick = () => { if (!S.scale || S.scale.hidden) return; if (S.mode === 'scale') setMode('select'); S.scale = null; changed(); status('Échelle effacée. Utilisez « Tracer l\'échelle » pour en définir une nouvelle.', true); };
@@ -1319,6 +1360,12 @@ function syncUI() {
   $('cOrig').checked = S.showOrig; $('cDims').checked = S.showDims; $('cNbLbl').checked = S.showNbLbl; $('cShowTrees').checked = S.showTrees; $('rOpa').value = S.opacity;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
+  { const bl = $('bldList'); bl.innerHTML = '';
+    if (S.buildings.length > 1) S.buildings.forEach((bb, i) => {
+      const x = document.createElement('button'); x.className = 'small' + (i === S.sel ? ' on' : ''); x.textContent = 'n° ' + (i + 1) + ' · ' + fmtLen(bb.h) + ' m';
+      x.title = 'Sélectionner cet immeuble'; x.onclick = () => selectBuilding(i); bl.appendChild(x);
+    });
+    bl.hidden = S.buildings.length < 2; }
   $('levels').textContent = '≈ R+' + Math.max(0, Math.round(S.height / 3) - 1);
   const bb = S.building, ppm = pxPerM();
   $('footprint').innerHTML = bb ? fmtNum(bb.w * bb.l / (ppm * ppm), 0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' m²' + (scaleOk() ? '' : ' <span class="warn">(échelle ?)</span>') : '—';
@@ -1397,8 +1444,8 @@ $('btnSaveProj').onclick = async () => {
   if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
   const p = {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL,
-    building: S.building, height: S.height, dz: S.dz, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
-    utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner }) => ({ u, v, corner })),
+    buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
+    utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
     scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { cx: (CW / 2 - V.ox) / V.s, cy: (CH / 2 - V.oy) / V.s, s: V.s }, cam: G.camSet ? { ...G.cam } : null }
@@ -1408,8 +1455,8 @@ $('btnSaveProj').onclick = async () => {
 async function loadProject(p) {
   if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
   const c = imgToCanvas(await loadImg(p.image));
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees'])
-    if (p[k] !== undefined) S[k] = p[k];
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees'])
+    if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
   setImage(c, p.image, p.fileName, true, p.site ? siteFromSave(p.site) : null);
@@ -1425,8 +1472,8 @@ async function loadProject(p) {
 }
 $('btnSavePlan').onclick = async () => {
   if (!S.clean) return alert('Ouvrez d\'abord un plan.');
-  const c = cloneCanvas(S.clean), x = c.getContext('2d'), b = S.building;
-  if (b) {
+  const c = cloneCanvas(S.clean), x = c.getContext('2d');
+  for (const b of S.buildings) {
     const st = S.origStyle || { color: '#00b050', filled: true, thick: 0 };
     if (st.filled) { polyPath(x, corners(b)); x.fillStyle = st.color; x.fill(); }
     else { const t = st.thick; polyPath(x, corners({ ...b, w: Math.max(1, b.w - t), l: Math.max(1, b.l - t) })); x.strokeStyle = st.color; x.lineWidth = t; x.stroke(); }
@@ -1446,13 +1493,13 @@ function preparePrint() {
   if (!S.clean) return false;
   S.dDay = S.day; S.dMin = S.minute; S.dOff = curOff(); S.dH = S.height;
   $('printImg').src = snapshot(2.5).toDataURL('image/png');
-  const b = S.building, ppm = pxPerM(), sun = curSun();
+  const ppm = pxPerM(), sun = curSun();
   const li = [];
   li.push(`<b>Plan :</b> ${S.fileName}`);
   li.push(`<b>Lieu :</b> ${fmtNum(S.lat, 4)}° N, ${fmtNum(S.lon, 4)}° E — nord du plan : ${fmtNum(S.north)}°`);
   li.push(`<b>Date :</b> ${fmtDate(S.day)} — ${fmtTime(S.minute)} ${S.utcMode ? 'TU' : '(heure locale, ' + $('tzInfo').textContent + ')'}`);
   li.push(`<b>Soleil :</b> ${sun.alt > 0 ? 'hauteur ' + fmtNum(sun.alt) + '°, azimut ' + fmtNum(sun.az) + '°' : 'sous l\'horizon'}`);
-  if (b) li.push(`<b>Immeuble :</b> ${fmtNum(b.w / ppm)} × ${fmtNum(b.l / ppm)} m (emprise ${fmtNum(b.w * b.l / (ppm * ppm), 0)} m²), hauteur ${fmtNum(S.height)} m${S.dz ? ', niveau / terrain ' + (S.dz > 0 ? '+' : '') + fmtLen(S.dz) + ' m' : ''}`);
+  S.buildings.forEach((b, i) => li.push(`<b>Immeuble${S.buildings.length > 1 ? ' n° ' + (i + 1) : ''} :</b> ${fmtNum(b.w / ppm)} × ${fmtNum(b.l / ppm)} m (emprise ${fmtNum(b.w * b.l / (ppm * ppm), 0)} m²), hauteur ${fmtNum(b.h)} m${b.dz ? ', niveau / terrain ' + (b.dz > 0 ? '+' : '') + fmtLen(b.dz) + ' m' : ''}`));
   li.push(`<b>Échelle :</b> ${scaleOk() ? fmtNum(ppm, 2) + ' px/m' : 'non définie'}`);
   if (S.showScenario && S.scenario.length) li.push('<b>Scénario :</b> ' + S.scenario.map((e, i) => `<span style="color:${SC_COLORS[i % SC_COLORS.length]}">■</span> ${fmtDate(e.day, true)} ${scenTime(e)}`).join(' · '));
   if (S.traj.length) li.push(`<b>Trajectoires :</b> ${S.traj.length} point(s), journée du ${fmtDate(S.day)}`);
@@ -1846,14 +1893,30 @@ async function loadSite() {
         blds.push({ rings, h: h !== undefined ? Math.round(h * 10) / 10 : undefined, bd: h, base, nature: pr.nature + (pr.construction_legere ? ' (légère)' : '') });
       }
     }
+    const prevSite = S.site, prevPpm = pxPerM();
     const jpg = bg === 'ortho';
     const dataURL = base.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.9);
     S.site = { label: g.label, L, bg, x0: bb[0], y1: bb[3], lon: g.lon, lat: g.lat, z0, terrSrc: terr ? terr.src : null };
     S.terrain = terr ? { n: terr.n, cell: terr.cell, z: terr.z, z0, src: terr.src } : null;
     S.lat = Math.round(g.lat * 1e4) / 1e4; S.lon = Math.round(g.lon * 1e4) / 1e4; S.tzStd = 1; S.dstAuto = true;
     S.north = Math.round(l93North(g.lon) * 100) / 100;
+    // immeubles projetés conservés : même position géographique si possible, sinon même disposition au centre
+    const oldB = S.buildings.map(b => ({ ...b })), oldSite = prevSite, oldPpm = prevPpm;
     setImage(base, dataURL, g.label.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'site', false, { blds, L });
     if (enter3D()) { G.cam.pitch = 50 * D2R; G.cam.yaw = 0; fit3d(); G.cam.dist *= 0.8; changed(); }
+    if (oldB.length) {
+      const k = ppm / oldPpm, W = base.width;
+      let nb = oldB.map(b => {
+        let cx = b.cx * k, cy = b.cy * k;
+        if (oldSite) { const X = oldSite.x0 + b.cx / oldPpm, Y = oldSite.y1 - b.cy / oldPpm; cx = (X - bb[0]) * ppm; cy = (bb[3] - Y) * ppm; }
+        return { ...b, cx, cy, w: b.w * k, l: b.l * k };
+      });
+      if (!oldSite || nb.every(b => b.cx < 0 || b.cy < 0 || b.cx > W || b.cy > W)) {   // ailleurs : regroupés au centre
+        const mx = nb.reduce((t, b) => t + b.cx, 0) / nb.length, my = nb.reduce((t, b) => t + b.cy, 0) / nb.length;
+        nb = nb.map(b => ({ ...b, cx: b.cx - mx + W / 2, cy: b.cy - my + W / 2 }));
+      }
+      const sel = S.sel; S.buildings = nb.map(normB); S.sel = clamp(sel, 0, nb.length - 1); S.dH = S.height;
+    }
     S.veg = mns && S.terrain && /LiDAR/.test(S.terrain.src) ? vegFromMNS(mns, S.terrain) : null; G.vegKey = '';
     const nh = NB.list.filter(c => c.h !== undefined).length;
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
@@ -2080,19 +2143,19 @@ function buildNeighbors() {
   setBuf('nb', g);
 }
 /** Immeuble projeté : altitudes (m) du terrain sous lui, du pied (terrain + niveau) et du toit. */
-function projGeom() {
-  const b = S.building; if (!b) return null;
+function projGeom(b = S.building) {
+  if (!b) return null;
   const zb = S.terrain ? Math.min(...corners(b).map(p => terrainAt(p.x, p.y))) : 0;
-  const foot = zb + S.dz, ground = S.terrain ? zb - 0.5 : 0;
-  return { zb, ground, foot, top: Math.max(ground, foot + S.dH) };
+  const foot = zb + b.dz, ground = S.terrain ? zb - 0.5 : 0;
+  return { zb, ground, foot, top: Math.max(ground, foot + (b === S.building ? S.dH : b.h)) };
 }
-function projTop() { const g = projGeom(); return g ? g.top * pxPerM() : 0; }
+function projTop(b) { const g = projGeom(b); return g ? g.top * pxPerM() : 0; }
 function buildProject() {
-  const g = new Geo(), b = S.building, ppm = pxPerM();
-  if (b) {
-    const cs = corners(b), pg = projGeom(), foot = pg.foot * ppm, gr = pg.ground * ppm, top = pg.top * ppm;
-    if (S.dz > 0) g.prism(cs, gr, foot, PLINTH, PLINTH);         // partie « niveau / terrain »
-    if (top > Math.max(gr, S.dz > 0 ? foot : gr)) g.prism(cs, S.dz > 0 ? foot : gr, top, GREEN, GREEN_TOP);
+  const g = new Geo(), ppm = pxPerM();
+  for (const b of S.buildings) {
+    const cs = corners(b), pg = projGeom(b), foot = pg.foot * ppm, gr = pg.ground * ppm, top = pg.top * ppm, up = b.dz > 0;
+    if (up) g.prism(cs, gr, foot, PLINTH, PLINTH);         // partie « niveau / terrain »
+    if (top > (up ? foot : gr)) g.prism(cs, up ? foot : gr, top, GREEN, b === S.building ? GREEN_TOP : GREEN);
   }
   setBuf('proj', g);
   const W = S.clean.width, H = S.clean.height, key = [W, H, ppm].join('|');
@@ -2130,7 +2193,7 @@ function sunVec(sun) {
   return v3.norm([dx * Math.cos(h), Math.sin(h), dy * Math.cos(h)]);
 }
 function maxSceneH() {
-  let m = Math.max(projTop(), terrainRange()[1] * pxPerM()); const ppm = pxPerM();
+  let m = Math.max(...S.buildings.map(b => projTop(b)), terrainRange()[1] * pxPerM()); const ppm = pxPerM();
   if (NB) for (const c of NB.list) m = Math.max(m, (nbBase(c) + nbHeight(c)) * ppm);
   if (S.veg && S.showTrees) m = Math.max(m, (terrainRange()[1] + (S.veg.max || 45)) * ppm);
   return m;
@@ -2192,11 +2255,10 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
     const t = fmtLen(c.h) + ' m', w = ctx.measureText(t).width + 10, rc = { x: q.x - w / 2, y: q.y - 9, w, h: 18 };
     P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
   }
-  const b = S.building;
-  if (b) {
-    const q = toScreen3(ci.VP, [b.cx, projTop(), b.cy]);
+  for (const b of S.buildings) {
+    const q = toScreen3(ci.VP, [b.cx, projTop(b), b.cy]);
     if (q) {
-      const t = 'H ' + fmtLen(S.dH) + ' m' + (S.dz ? ' (' + (S.dz > 0 ? '+' : '−') + fmtLen(Math.abs(S.dz)) + ')' : ''), w = ctx.measureText(t).width + 10;
+      const hh = b === S.building ? S.dH : b.h, t = 'H ' + fmtLen(hh) + ' m' + (b.dz ? ' (' + (b.dz > 0 ? '+' : '−') + fmtLen(Math.abs(b.dz)) + ')' : ''), w = ctx.measureText(t).width + 10;
       drawLabel(ctx, P.place(q.x, q.y, w, 18, -Math.PI / 2), t, BLD_DARK, q);
     }
   }
@@ -2227,11 +2289,11 @@ function ground3(sx, sy) { const { o, d } = ray3(sx, sy), y0 = camInfo().target[
 /** Ce que l'on vise : l'immeuble projeté ou une construction voisine (marche le long du rayon). */
 function pick3(sx, sy) {
   const { o, d } = ray3(sx, sy); if (d[1] > -1e-4) return null;
-  const ppm = pxPerM(), mh = maxSceneH() + 1, b = S.building, top = projTop();
+  const ppm = pxPerM(), mh = maxSceneH() + 1, tops = S.buildings.map(b => projTop(b));
   const lo = minSceneH(), t0 = Math.max(0, (o[1] - mh) / -d[1]), t1 = (o[1] - lo) / -d[1], step = Math.max(0.5, (t1 - t0) / 20000);
   for (let t = t0; t <= t1 + step; t += step) {
     const x = o[0] + d[0] * t, z = o[2] + d[2] * t, gy = S.terrain ? terrainAt(x, z) * ppm : 0, y = Math.max(gy, o[1] + d[1] * t);
-    if (b && y <= top) { const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj' }; }
+    for (let i = 0; i < S.buildings.length; i++) { const b = S.buildings[i]; if (y > tops[i]) continue; const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj', bi: i }; }
     const c = nbAt(x, z); if (c && y <= (nbBase(c) + nbHeight(c)) * ppm + 0.5) return { kind: 'nb', c };
     if (y <= gy) break;   // sol atteint
   }
@@ -2279,7 +2341,7 @@ glcv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   if (e.shiftKey) return startOrbit(e);
   const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
-  if (hit && hit.kind === 'proj' && g) { drag3 = { type: 'move', g0: g, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; return; }
+  if (hit && hit.kind === 'proj' && g) { selectBuilding(hit.bi); drag3 = { type: 'move', g0: g, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; return; }
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
@@ -2299,7 +2361,7 @@ glcv.addEventListener('pointermove', e => {
   S.dirty = true;
 });
 glcv.addEventListener('pointerup', e => {
-  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e); heightPopupFor(pick3(p.x, p.y), e.clientX, e.clientY); }
+  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e), hit = pick3(p.x, p.y); if (hit && hit.kind === 'proj') selectBuilding(hit.bi); heightPopupFor(hit, e.clientX, e.clientY); }
   drag3 = null; glcv.style.cursor = 'default'; changed();
 });
 glcv.addEventListener('wheel', e => {
@@ -2338,6 +2400,7 @@ document.addEventListener('keydown', e => {
     case '-': S.height = Math.max(0, S.height - 1); break;
     case ' ': togglePlay(); break;
     case 'Escape': setMode('select'); break;
+    case 'Delete': if (S.buildings.length > 1) $('btnDelB').onclick(); break;
     default: done = false;
   }
   if (done) { e.preventDefault(); changed(); }
