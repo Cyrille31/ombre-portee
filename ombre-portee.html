@@ -839,7 +839,7 @@ function render(ctx, W, H, v, opt = {}) {
   ctx.setTransform(k, 0, 0, k, 0, 0);
 
   const P = new Placer(W, H);
-  P.add({ x: W - 96, y: 0, w: 96, h: 116 });     // rose des vents
+  P.add(dialLayout(W, H).rect);     // boussole et cadran solaire
   P.add({ x: 0, y: H - 46, w: 210, h: 46 });     // échelle graphique
   if (NB && S.showNbLbl) {   // hauteurs des constructions voisines
     ctx.font = 'bold 12px system-ui, sans-serif';
@@ -970,26 +970,8 @@ function render(ctx, W, H, v, opt = {}) {
     }
   });
 
-  // rose des vents + soleil
-  {
-    const cx = W - 50, cy = 52, R = 34, { N, E } = northVecs();
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = '#99a'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#c00';
-    ctx.beginPath(); ctx.moveTo(cx + N.x * (R - 6), cy + N.y * (R - 6)); ctx.lineTo(cx + E.x * 6, cy + E.y * 6); ctx.lineTo(cx - E.x * 6, cy - E.y * 6); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#555';
-    ctx.beginPath(); ctx.moveTo(cx - N.x * (R - 6), cy - N.y * (R - 6)); ctx.lineTo(cx + E.x * 6, cy + E.y * 6); ctx.lineTo(cx - E.x * 6, cy - E.y * 6); ctx.closePath(); ctx.fill();
-    ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c00';
-    ctx.fillText('N', cx + N.x * (R + 9), cy + N.y * (R + 9));
-    if (sun.alt > 0) {
-      const a = sun.az * D2R, dx = N.x * Math.cos(a) + E.x * Math.sin(a), dy = N.y * Math.cos(a) + E.y * Math.sin(a);
-      const r = R * (1 - sun.alt / 90) * 0.92 + 2;
-      ctx.fillStyle = '#f5b301'; ctx.strokeStyle = '#a66f00'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(cx + dx * r, cy + dy * r, 6, 0, 7); ctx.fill(); ctx.stroke();
-    }
-    ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx - 4, cy + R + 22);
-  }
+  // boussole et cadran solaire
+  drawDials(ctx, W, H, northVecs().N, sun);
   // échelle graphique
   {
     const mPerPx = 1 / (ppm * v.s), L = niceLen(140 * mPerPx), w = L / mPerPx, x0 = 14, y0 = H - 22;
@@ -1058,6 +1040,7 @@ cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
   const p = evPos(e), w = toW(p);
   const pan = () => { drag = { type: 'pan', sx: p.x, sy: p.y, ox: V.ox, oy: V.oy }; cv.style.cursor = 'grabbing'; };
+  if (e.button === 0) { const dk = dialHit(p); if (dk) { drag = dialDown(p, dk); return; } }
   if (e.button === 1 || e.button === 2) { pan(); drag.btn = e.button; return; }
   if (e.button === 0 && e.shiftKey && S.mode === 'select' && !(hitTest(p) || {}).hx && (hitTest(p) || {}).kind !== 'rot') {
     // Maj + glisser : passage en 3D et rotation de la vue
@@ -1093,8 +1076,9 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const p = evPos(e), w = toW(p);
   if (S.temp && !drag && S.mode === 'scale') { S.temp.p2 = w; S.dirty = true; }
-  if (!drag) { if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
+  if (!drag) { if (S.clean && dialHit(p)) { cv.style.cursor = 'pointer'; return; } if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
   const b = S.building;
+  if (drag.type === 'dial') return dialMove(drag, p);
   switch (drag.type) {
     case 'pan': V.ox = drag.ox + p.x - drag.sx; V.oy = drag.oy + p.y - drag.sy; break;
     case 'draw': S.temp.p2 = w; break;
@@ -1117,6 +1101,7 @@ cv.addEventListener('pointermove', e => {
 });
 cv.addEventListener('pointerup', e => {
   if (!drag) return;
+  if (drag.type === 'dial') { dialUp(drag); drag = null; return; }
   if (drag.type === 'pan' && drag.btn === 2) {   // clic droit sans glisser : hauteur
     const p = evPos(e);
     if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 4) {
@@ -1948,6 +1933,108 @@ function siteFromSave(st) {
   return { L: st.L, blds: st.blds.map(b => ({ ...b, rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
 }
 
+
+/* ------------------------------------------- Boussole et cadran solaire */
+function dialLayout(W = CW, H = CH) {
+  const R = 58, cx = W - R - 18, cy = R + 18;
+  return { R, cx, cy, sx: cx, sy: cy + 2 * R + 40, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: 4 * R + 104 } };
+}
+/** Angle (rad, sens horaire depuis le haut) de l'ombre du style d'un cadran horizontal, à un instant donné. */
+function dialAngle(day, minute) {
+  const off = offsetFor(day, mod(minute, 1440), S.utcMode), s = sunFor(day, minute, off);
+  const H = ((minute - off * 60 + s.eqt + 4 * S.lon) / 4 - 180) * D2R, phi = S.lat * D2R;
+  return { a: Math.atan2(Math.sin(phi) * Math.sin(H), Math.cos(H)), alt: s.alt };
+}
+/** Dessine la boussole (nord : vecteur écran n) et le cadran solaire. */
+function drawDials(ctx, W, H, n, sun) {
+  const L = dialLayout(W, H), { R, cx, cy, sx, sy } = L, nx = n.x, ny = n.y;
+  // boussole
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.strokeStyle = '#99a'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#ccd';
+  for (let k = 0; k < 16; k++) {
+    const a = k * Math.PI / 8, c = Math.cos(a), si = Math.sin(a), ux = nx * c - ny * si, uy = nx * si + ny * c, l = k % 4 ? 5 : 10;
+    ctx.beginPath(); ctx.moveTo(cx + ux * (R - 2), cy + uy * (R - 2)); ctx.lineTo(cx + ux * (R - 2 - l), cy + uy * (R - 2 - l)); ctx.stroke();
+  }
+  ctx.font = 'bold 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  [['E', 1], ['S', 2], ['O', 3]].forEach(([t, k]) => {
+    const a = k * Math.PI / 2, ux = nx * Math.cos(a) - ny * Math.sin(a), uy = nx * Math.sin(a) + ny * Math.cos(a);
+    ctx.fillStyle = '#667'; ctx.fillText(t, cx + ux * (R - 19), cy + uy * (R - 19));
+  });
+  for (const [sg, col] of [[1, '#c00'], [-1, '#555']]) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx + sg * nx * (R - 10), cy + sg * ny * (R - 10)); ctx.lineTo(cx - ny * 9, cy + nx * 9); ctx.lineTo(cx + ny * 9, cy - nx * 9); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
+  ctx.font = 'bold 14px system-ui, sans-serif'; ctx.fillStyle = '#c00'; ctx.fillText('N', cx + nx * (R + 10), cy + ny * (R + 10));
+  if (sun.alt > 0) {   // soleil sur le pourtour
+    const a = sun.az * D2R, ux = nx * Math.cos(a) - ny * Math.sin(a), uy = nx * Math.sin(a) + ny * Math.cos(a), rr = R * (1 - sun.alt / 90) * 0.85 + 4;
+    ctx.fillStyle = '#f5b301'; ctx.strokeStyle = '#a66f00'; ctx.beginPath(); ctx.arc(cx + ux * rr, cy + uy * rr, 7, 0, 7); ctx.fill(); ctx.stroke();
+  }
+  ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
+  // cadran solaire horizontal (midi solaire en haut)
+  ctx.fillStyle = 'rgba(255,253,245,0.94)'; ctx.strokeStyle = '#b9a77a'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(sx, sy, R, 0, 7); ctx.fill(); ctx.stroke();
+  const day = Math.round(S.dDay), d0 = S.minute - mod(S.minute, 1440);
+  ctx.font = '10px system-ui, sans-serif';
+  for (let h = 0; h < 24; h++) for (const half of [0, 30]) {
+    const { a, alt } = dialAngle(day, h * 60 + half); if (alt <= 0) continue;
+    const ux = Math.sin(a), uy = -Math.cos(a);
+    ctx.strokeStyle = half ? '#d8cba8' : '#9c8a5c'; ctx.lineWidth = half ? 0.8 : 1.2;
+    ctx.beginPath(); ctx.moveTo(sx + ux * (half ? R * 0.6 : R * 0.25), sy + uy * (half ? R * 0.6 : R * 0.25)); ctx.lineTo(sx + ux * R * 0.68, sy + uy * R * 0.68); ctx.stroke();
+    if (!half) { ctx.fillStyle = '#6b5a2e'; ctx.fillText(String(h), sx + ux * (R * 0.84), sy + uy * (R * 0.84)); }
+  }
+  const cur = dialAngle(day, mod(S.dMin, 1440));
+  // style (gnomon) vers le nord-midi, et son ombre
+  ctx.strokeStyle = '#7a6a40'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - R * 0.22); ctx.stroke();
+  if (cur.alt > 0) {
+    const ux = Math.sin(cur.a), uy = -Math.cos(cur.a);
+    ctx.strokeStyle = 'rgba(30,30,45,0.85)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + ux * (R - 6), sy + uy * (R - 6)); ctx.stroke(); ctx.lineCap = 'butt';
+    ctx.fillStyle = '#223'; ctx.beginPath(); ctx.arc(sx + ux * (R - 6), sy + uy * (R - 6), 4.5, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = '#7a6a40'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 7); ctx.fill();
+  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334';
+  ctx.fillText(fmtTime(S.minute) + (S.utcMode ? ' TU' : '') + (cur.alt > 0 ? '' : ' (nuit)'), sx, sy + R + 13);
+  return L;
+}
+/** Partie du cadran visée (coordonnées écran du canevas). */
+function dialHit(p) {
+  const L = dialLayout();
+  if (Math.hypot(p.x - L.cx, p.y - L.cy) <= L.R + 6) return 'compass';
+  if (Math.hypot(p.x - L.sx, p.y - L.sy) <= L.R + 6) return 'sundial';
+  return null;
+}
+const dialAng = (p, kind) => { const L = dialLayout(), c = kind === 'compass' ? [L.cx, L.cy] : [L.sx, L.sy]; return Math.atan2(p.x - c[0], -(p.y - c[1])); };
+/** Glisser sur le cadran : l'heure dont l'ombre du style suit le pointeur. */
+function dialSetTime(p) {
+  const target = dialAng(p, 'sundial'), day = Math.round(S.day), d0 = S.minute - mod(S.minute, 1440);
+  let best = null, bd = 1e9;
+  for (let m = 0; m < 1440; m += 2) {
+    const { a, alt } = dialAngle(day, m); if (alt <= 0) continue;
+    const df = Math.abs(Math.atan2(Math.sin(a - target), Math.cos(a - target))); if (df < bd) { bd = df; best = m; }
+  }
+  if (best !== null) { S.minute = d0 + best; S.dMin = S.minute; changed(); }
+}
+/** Boussole : glisser l'aiguille (2D : nord du plan ; 3D : rotation de la vue) ; clic : retour au nord. */
+function dialDown(p, kind) { return { type: 'dial', kind, sx: p.x, sy: p.y, a: dialAng(p, kind), moved: false }; }
+function dialMove(d, p) {
+  if (Math.hypot(p.x - d.sx, p.y - d.sy) > 3) d.moved = true;
+  if (!d.moved) return;
+  if (d.kind === 'sundial') return dialSetTime(p);
+  const a = dialAng(p, 'compass'), da = Math.atan2(Math.sin(a - d.a), Math.cos(a - d.a)); d.a = a;
+  if (S.view3d) G.cam.yaw = mod(G.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI;
+  else { S.north = Math.round((mod(S.north + da * R2D + 180, 360) - 180) * 10) / 10; changed(); }
+  S.dirty = true;
+}
+function dialUp(d) {
+  if (d.moved) return;
+  if (d.kind === 'sundial') {   // midi solaire
+    const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + Math.round(ev.noon); changed();
+  } else if (S.view3d) { G.cam.yaw = S.north * D2R; S.dirty = true; }
+  else { S.north = S.site ? Math.round(l93North(S.site.lon) * 100) / 100 : 0; changed(); }
+}
+
 /* ---------------------------------------------------------- Vue 3D (WebGL 2) */
 // Repère 3D : X = x du plan, Z = y du plan, Y = vertical (unité : pixel du plan)
 const G = { gl: null, cam: { tx: 0, tz: 0, yaw: 0, pitch: 0, dist: 1000 }, fov: 40 * D2R, nbKey: '', planSrc: null, idsVer: -1 };
@@ -2246,7 +2333,7 @@ function toScreen3(VP, p, cw = CW, ch = CH) {
 function overlay3d(ci, sun, ctx = octx, k = DPR) {
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, CW, CH);
   const ppm = pxPerM(), P = new Placer(CW, CH);
-  P.add({ x: CW - 96, y: 0, w: 96, h: 116 });
+  P.add(dialLayout().rect);
   ctx.font = 'bold 12px system-ui, sans-serif';
   if (NB && S.showNbLbl) for (const c of NB.list) if (c.h !== undefined) {
     const yy = (nbBase(c) + c.h) * ppm, q = toScreen3(ci.VP, [c.lx, yy, c.ly]); if (!q || q.x < -50 || q.y < -20 || q.x > CW + 50 || q.y > CH + 20) continue;
@@ -2262,19 +2349,11 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
       drawLabel(ctx, P.place(q.x, q.y, w, 18, -Math.PI / 2), t, BLD_DARK, q);
     }
   }
-  // rose des vents (nord projeté à l'écran)
-  const cx = CW - 50, cy = 52, R = 34, o = toScreen3(ci.VP, ci.target);
-  const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, 0, ci.target[2] + N.y * G.cam.dist * 0.1]);
+  // boussole (nord projeté à l'écran) et cadran solaire
+  const o = toScreen3(ci.VP, ci.target);
+  const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
   let nx = 0, ny = -1; if (o && nq) { const l = Math.hypot(nq.x - o.x, nq.y - o.y); if (l > 1e-6) { nx = (nq.x - o.x) / l; ny = (nq.y - o.y) / l; } }
-  ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.strokeStyle = '#99a'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill(); ctx.stroke();
-  for (const [s, col] of [[1, '#c00'], [-1, '#555']]) {
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx + s * nx * (R - 6), cy + s * ny * (R - 6)); ctx.lineTo(cx - ny * 6, cy + nx * 6); ctx.lineTo(cx + ny * 6, cy - nx * 6); ctx.closePath(); ctx.fill();
-  }
-  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c00';
-  ctx.fillText('N', cx + nx * (R + 9), cy + ny * (R + 9));
-  ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx - 4, cy + R + 22);
+  drawDials(ctx, CW, CH, { x: nx, y: ny }, sun);
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, CH - 26, 330, 20); ctx.fillStyle = '#334';
   ctx.fillText('Vue 3D — Maj + glisser : pivoter / incliner', 12, CH - 16);
 }
@@ -2339,14 +2418,16 @@ glcv.addEventListener('pointerdown', e => {
   const p = ev3(e);
   if (e.button === 2) { drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, right: true }; return; }
   if (e.button !== 0) return;
+  { const dk = dialHit(p); if (dk) { drag3 = dialDown(p, dk); return; } }
   if (e.shiftKey) return startOrbit(e);
   const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
   if (hit && hit.kind === 'proj' && g) { selectBuilding(hit.bi); drag3 = { type: 'move', g0: g, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; return; }
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
-  if (!drag3) return;
+  if (!drag3) { glcv.style.cursor = dialHit(ev3(e)) ? 'pointer' : 'default'; return; }
   const p = ev3(e);
+  if (drag3.type === 'dial') return dialMove(drag3, p);
   if (drag3.type === 'orbit') {
     const dx = e.clientX - drag3.lx, dy = e.clientY - drag3.ly; drag3.lx = e.clientX; drag3.ly = e.clientY;
     if (drag3.right && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 4) return;
@@ -2361,6 +2442,7 @@ glcv.addEventListener('pointermove', e => {
   S.dirty = true;
 });
 glcv.addEventListener('pointerup', e => {
+  if (drag3 && drag3.type === 'dial') { dialUp(drag3); drag3 = null; return; }
   if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e), hit = pick3(p.x, p.y); if (hit && hit.kind === 'proj') selectBuilding(hit.bi); heightPopupFor(hit, e.clientX, e.clientY); }
   drag3 = null; glcv.style.cursor = 'default'; changed();
 });
