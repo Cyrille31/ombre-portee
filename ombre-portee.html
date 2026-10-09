@@ -45,6 +45,12 @@ input[type=range]{width:100%}
 .hint{color:var(--muted);font-size:11.5px}
 body.noaide .aide{display:none!important}
 #btnPlay{min-width:84px}
+#clockBox{position:absolute;z-index:4;background:rgba(255,255,255,0.95);border:1px solid #9aa7bd;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:6px 6px;text-align:center;width:186px}
+#cbDate{font-size:17px;font-weight:600;color:#334}
+#cbTime{font-size:26px;font-weight:700;color:#223;line-height:1.1;font-variant-numeric:tabular-nums}
+#clockBox button,#clockBox select{padding:2px 5px;font-size:12px}
+#clockBox #btnPlay{min-width:76px}
+#clockBox select{width:84px}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
 .warn{color:var(--warn)}
@@ -118,13 +124,6 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row" style="gap:2px"><span class="hint" style="width:44px">Heure</span><input type="range" id="rTime" min="0" max="1439" step="1" style="flex:1"></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:44px">Jour</span><input type="range" id="rDay" min="0" max="365" step="1" style="flex:1"></div>
     <div class="f"><span class="lbl drag" data-for="iDialStep" title="Molette sur le cadran solaire : saut d'heure en heure, calé sur midi">Pas du cadran</span><input type="text" id="iDialStep"><span class="u">h</span></div>
-    <div class="row">
-      <button id="btnPlay" title="Animer la journée (Espace)">▶ Animer</button>
-      <select id="playSpeed" title="Vitesse d'animation">
-        <option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
-      </select>
-      <button id="btnNow">Maintenant</button>
-    </div>
     <div id="sunInfo" class="info aide"></div>
   </section>
 
@@ -251,7 +250,18 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="seg" title="Vue 3D : Maj + glisser sur le plan pour pivoter / incliner"><button id="v2d" class="on">2D</button><button id="v3d">3D</button></div>
     <button id="btnTop" disabled title="Revenir à une vue de dessus, nord en haut">Vue de dessus</button>
   </div>
-  <div id="stage"><canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas></div>
+  <div id="stage"><canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas>
+    <div id="clockBox" hidden>
+      <div id="cbDate"></div><div id="cbTime"></div>
+      <div class="row" style="justify-content:center;gap:4px;margin:6px 0 0">
+        <button id="btnPlay" title="Animer la journée (Espace)">▶ Animer</button>
+        <select id="playSpeed" title="Vitesse d'animation">
+        <option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
+        </select>
+        <button id="btnNow">Maintenant</button>
+    </div>
+    </div>
+  </div>
   <div id="status"></div>
 </main>
 </div>
@@ -300,7 +310,7 @@ const S = {
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
   traj: [], scenario: [], showScenario: true, showCurrent: true,
-  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: true, showTrees: true,
+  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: true, showTrees: true, showProj: true,
   mode: 'select', temp: null, playing: false, playSpeed: 60,
   dirty: true
 };
@@ -757,6 +767,7 @@ let CW = 0, CH = 0, DPR = 1;
 function resizeCanvas() {
   const r = $('stage').getBoundingClientRect(); DPR = window.devicePixelRatio || 1;
   CW = Math.max(10, r.width); CH = Math.max(10, r.height);
+  setTimeout(placeClock, 0);
   cv.width = glcv.width = ovcv.width = Math.round(CW * DPR); cv.height = glcv.height = ovcv.height = Math.round(CH * DPR); S.dirty = true;
 }
 function fitView() {
@@ -821,7 +832,7 @@ function render(ctx, W, H, v, opt = {}) {
     ctx.fillText('ou essayez le « Plan de démonstration ».', W / 2, H / 2 + 14);
     return;
   }
-  const b = S.building, BL = S.buildings, ppm = pxPerM(), hM = b ? hOf(b) : 0, sun = curSun(), px = 1 / v.s;
+  const BL = S.showProj ? S.buildings : [], b = S.showProj ? S.building : null, ppm = pxPerM(), hM = b ? hOf(b) : 0, sun = curSun(), px = 1 / v.s;
   // ombres de tous les immeubles en un seul tracé (union : pas de double assombrissement)
   const shadowsPath = s => { ctx.beginPath(); let any = false; for (const bb of BL) { const so = shadowOffset(s, hOf(bb)); if (!so) continue; any = true; shadowPoly(bb, so).forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
   ctx.save(); { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); ctx.setTransform(k * v.s * c, k * v.s * sn, -k * v.s * sn, k * v.s * c, k * v.ox, k * v.oy); }
@@ -1023,7 +1034,7 @@ function handles(v = V) {
   return out;
 }
 function hitTest(p) {
-  const b = S.building; if (!b) return null;
+  const b = S.building; if (!b || !S.showProj) return null;
   if (S.mode === 'select' && S.editB) {
     const hs = handles();
     const r = hs.find(h => h.kind === 'rot' && Math.hypot(h.x - p.x, h.y - p.y) < 10); if (r) return r;
@@ -1377,6 +1388,7 @@ function syncUI() {
     f.el.disabled = !on;
     if (!f.editing) f.el.value = on ? fmtNum(f.get(), f.dec).replace(/,?0+$/, '').replace(/^-0$/, '0') || '0' : '';
   }
+  placeClock();
   const c = fromDays(S.day);
   $('fDay').textContent = c.d; $('fMonth').textContent = MONTHS[c.m]; $('fYear').textContent = c.y;
   const m = Math.round(mod(S.minute, 1440)) % 1440;
@@ -1482,7 +1494,7 @@ $('btnSaveProj').onclick = async () => {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1497,7 +1509,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = cc.height = im.width; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -1766,11 +1778,14 @@ function openMenu(cx, cy, title, build) {
   const ok = mk('button', 'on small', 'OK'); ok.onclick = closePop; const row = mk('div', 'row'); row.style.justifyContent = 'flex-end'; row.append(ok); hPop.append(row);
   hPop.hidden = false; popOpen = true;
   const rc = hPop.getBoundingClientRect();
-  hPop.style.left = clamp(cx + 14, 4, innerWidth - rc.width - 4) + 'px';
+  // à droite du pointeur, sinon à gauche : jamais dessous (le clic droit irait au navigateur)
+  hPop.style.left = (cx + 14 + rc.width < innerWidth - 4 ? cx + 14 : Math.max(4, cx - 14 - rc.width)) + 'px';
   hPop.style.top = clamp(cy - 24, 4, innerHeight - rc.height - 4) + 'px';
   const first = hPop.querySelector('input[type=text]'); if (first) { first.focus(); first.select(); }
   changed();
 }
+document.getElementById('app').addEventListener('contextmenu', e => { if (e.target.tagName !== 'INPUT' || e.target.type !== 'text') e.preventDefault(); });
+hPop.addEventListener('contextmenu', e => e.preventDefault());
 hPop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') closePop(); e.stopPropagation(); });
 document.addEventListener('pointerdown', e => { if (popOpen && !hPop.contains(e.target)) closePop(); }, true);
 function menuNb(c, cx, cy) {
@@ -1779,6 +1794,7 @@ function menuNb(c, cx, cy) {
     m.num('Hauteur', () => c.h, v => { c.h = v; S.lastNbH = v; S.hVer++; }, { unit: 'm', big: true });
     if (c.bd > 0) m.hint('BD TOPO : ' + fmtLen(c.bd) + ' m' + (c.roof ? ' (faîtage ; forme du toit d\'après le LiDAR)' : ''));
     m.check('Afficher les hauteurs des constructions voisines', () => S.showNbLbl, v => S.showNbLbl = v);
+    if (c.h0 !== undefined && c.h0 !== null) m.button('Hauteur d\'origine (' + fmtLen(c.h0) + ' m)', () => { c.h = c.h0; S.hVer++; closePop(); });
     m.button('Supprimer la hauteur', () => { delete c.h; S.hVer++; closePop(); });
   });
 }
@@ -1802,6 +1818,7 @@ function menuBg(cx, cy) {
       m.check('Cadastre', () => S.showCad, v => { S.showCad = v; composeSite(); });
     }
     if (S.veg) m.check('Arbres', () => S.showTrees, v => S.showTrees = v);
+    m.check('Immeuble(s) projeté(s) visible(s)', () => S.showProj, v => { S.showProj = v; if (!v) S.editB = false; });
   });
 }
 function menuTree(t, cx, cy) {
@@ -1943,7 +1960,7 @@ function nbFromBuildings(blds, W, H) {
   for (const b of blds) {
     // orientation : contour extérieur « négatif », trous « positifs » (normales des murs vers l'extérieur)
     const rings = b.rings.map((r, k) => (k === 0) === (ringArea(r) > 0) ? r.slice().reverse() : r);
-    const c = { n: 0, loops: rings, bd: b.bd, base: b.base, nature: b.nature, bdt: b.bdt, roof: b.roof };
+    const c = { n: 0, loops: rings, bd: b.bd, base: b.base, nature: b.nature, bdt: b.bdt, roof: b.roof, h0: b.h0 !== undefined ? b.h0 : b.h };
     if (b.h !== undefined && b.h !== null) c.h = b.h;
     list.push(c);
     c.n = rasterize(ids, W, H, rings, list.length);
@@ -1997,7 +2014,7 @@ function computeRoofs(mns, T) {
       for (const [ii, jj] of [[a - 1, b - 1], [a, b - 1], [a - 1, b], [a, b]]) if (ii >= 0 && jj >= 0 && ii < w && jj < h && !isNaN(P[jj * w + ii])) { t += P[jj * w + ii]; q++; }
       v[b * (w + 1) + a] = q ? t / q : 0;
     }
-    c.h = Math.round((top - sol) * 10) / 10; c.bd = c.h;
+    c.h = Math.round((top - sol) * 10) / 10; c.bd = c.h; c.h0 = c.h;
     c.roof = { i0, j0, w, h, cell: T.cell, e: clamp((eave - sol) / (top - sol), 0, 1), v };
     cnt++;
   }
@@ -2157,7 +2174,7 @@ function siteForSave() {
     layers: { plan: Ls.plan ? canvasURL(Ls.plan) : null, ortho: Ls.ortho ? canvasURL(Ls.ortho, true) : null, cad: Ls.cad ? canvasURL(Ls.cad) : null },
     terrain: S.terrain ? { n: S.terrain.n, cell: S.terrain.cell, z0: S.terrain.z0, src: S.terrain.src, z: f32ToB64(S.terrain.z) } : null,
     veg: S.veg ? { n: S.veg.n, cell: S.veg.cell, area: S.veg.area, max: S.veg.max, hedgeArea: S.veg.hedgeArea, trees: S.veg.trees, h: f32ToB64(S.veg.h) } : null,
-    blds: NB.list.map(c => ({ rings: c.loops.map(r => r.map(p => [r1(p.x), r1(p.y)])), h: c.h, bd: c.bd, base: c.base, nature: c.nature, bdt: c.bdt,
+    blds: NB.list.map(c => ({ rings: c.loops.map(r => r.map(p => [r1(p.x), r1(p.y)])), h: c.h, bd: c.bd, base: c.base, nature: c.nature, bdt: c.bdt, h0: c.h0,
       roof: c.roof ? { i0: c.roof.i0, j0: c.roof.j0, w: c.roof.w, h: c.roof.h, cell: c.roof.cell, e: c.roof.e, v: btoa(Array.from(c.roof.v, x => String.fromCharCode(Math.round(x * 255))).join('')) } : undefined }))
   };
 }
@@ -2172,12 +2189,13 @@ function siteFromSave(st) {
 
 /* ------------------------------------------- Boussole et cadran solaire */
 function dialLayout(W = CW, H = CH) {
-  const R = 58, cx = W - R - 18, cy = R + 18, sy = cy + 2 * R + 40, R3 = 50, ky = sy + R + 34 + R3;
-  return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: ky + R3 + 24 } };
+  const R = 58, cx = W - R - 18, cy = R + 18, sy = cy + 2 * R + 40, R3 = 58, ky = sy + R + 22 + R3, by = ky + R3 + 14;
+  return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, by, rect: { x: W - 2 * R - 140, y: 0, w: 2 * R + 140, h: by + 100 } };
 }
 const CAL_STEPS = [['1 jour', 'd1'], ['1 semaine', 'w1'], ['½ mois', 'm05'], ['1 mois', 'm1'], ['½ saison', 's05'], ['1 saison', 's1']];
 /** Angle (rad, depuis le haut, sens horaire) d'un jour sur le calendrier : 1er janvier en haut. */
-function calAngle(day) { const c = fromDays(day), y0 = toDays(c.y, 0, 1), n = toDays(c.y + 1, 0, 1) - y0; return (day - y0 + 0.5) / n * 2 * Math.PI; }
+/** Angle (rad, depuis le haut, sens horaire) d'un jour sur le calendrier : passage décembre / janvier en bas. */
+function calAngle(day) { const c = fromDays(day), y0 = toDays(c.y, 0, 1), n = toDays(c.y + 1, 0, 1) - y0; return Math.PI + (day - y0 + 0.5) / n * 2 * Math.PI; }
 function calStepBy(dir) {
   switch (S.calStep) {
     case 'w1': S.day += 7 * dir; break;
@@ -2248,7 +2266,6 @@ function drawDials(ctx, W, H, n, sun) {
   }
   ctx.fillStyle = '#7a6a40'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 7); ctx.fill();
   ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334';
-  haloText(ctx, fmtTime(S.minute) + (S.utcMode ? ' TU' : '') + (cur.alt > 0 ? '' : ' (nuit)'), sx, sy + R + 13);
   // calendrier : douze mois, flèche sur le jour courant, repères des solstices et équinoxes
   const { kx, ky, R3 } = L, yr = fromDays(S.day).y;
   ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.strokeStyle = '#9aa7bd'; ctx.lineWidth = 1.2;
@@ -2271,11 +2288,18 @@ function drawDials(ctx, W, H, n, sun) {
   ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(kx + Math.sin(ak) * (R3 - 16), ky - Math.cos(ak) * (R3 - 16)); ctx.stroke(); ctx.lineCap = 'butt';
   ctx.fillStyle = '#2b3550'; ctx.beginPath(); ctx.arc(kx + Math.sin(ak) * (R3 - 16), ky - Math.cos(ak) * (R3 - 16), 4, 0, 7); ctx.fill();
   ctx.beginPath(); ctx.arc(kx, ky, 3.5, 0, 7); ctx.fill();
-  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334'; haloText(ctx, fmtDate(S.day, true), kx, ky + R3 + 13);
   return L;
 }
 /** Partie du cadran visée (coordonnées écran du canevas). */
 const underDials = (rc, W = CW, H = CH) => { const d = dialLayout(W, H).rect; return rc.x < d.x + d.w && rc.x + rc.w > d.x && rc.y < d.y + d.h && rc.y + rc.h > d.y; };
+/** Afficheur date / heure (élément HTML) sous les cadrans. */
+function placeClock() {
+  const box = $('clockBox'); box.hidden = !S.clean; if (!S.clean) return;
+  const L = dialLayout(); box.style.left = Math.min(L.cx - box.offsetWidth / 2, CW - box.offsetWidth - 6) + 'px'; box.style.top = L.by + 'px';
+  const m = Math.round(mod(S.minute, 1440)) % 1440, c = fromDays(S.day);
+  $('cbDate').textContent = c.d + ' ' + MONTHS[c.m];
+  $('cbTime').textContent = pad2(Math.floor(m / 60)) + ':' + pad2(m % 60) + (S.utcMode ? ' TU' : '');
+}
 function dialHit(p) {
   const L = dialLayout();
   if (Math.hypot(p.x - L.cx, p.y - L.cy) <= L.R + 6) return 'compass';
@@ -2302,7 +2326,7 @@ function dialMove(d, p) {
   if (!d.moved) return;
   if (d.kind === 'sundial') return dialSetTime(p);
   if (d.kind === 'calendar') {   // la flèche suit le pointeur : jour de l'année
-    const yr = fromDays(S.day).y, y0 = toDays(yr, 0, 1), n = toDays(yr + 1, 0, 1) - y0, a = mod(dialAng(p, 'calendar'), 2 * Math.PI);
+    const yr = fromDays(S.day).y, y0 = toDays(yr, 0, 1), n = toDays(yr + 1, 0, 1) - y0, a = mod(dialAng(p, 'calendar') - Math.PI, 2 * Math.PI);
     S.day = y0 + clamp(Math.floor(a / (2 * Math.PI) * n), 0, n - 1); S.dDay = S.day; changed(); return;
   }
   const a = dialAng(p, 'compass'), da = Math.atan2(Math.sin(a - d.a), Math.cos(a - d.a)); d.a = a;
@@ -2597,7 +2621,7 @@ function projGeom(b = S.building) {
 function projTop(b) { const g = projGeom(b); return g ? g.top * pxPerM() : 0; }
 function buildProject() {
   const g = new Geo(), ppm = pxPerM();
-  for (const b of S.buildings) {
+  for (const b of S.showProj ? S.buildings : []) {
     const cs = corners(b), pg = projGeom(b), foot = pg.foot * ppm, gr = pg.ground * ppm, top = pg.top * ppm, up = b.dz > 0;
     if (up) g.prism(cs, gr, foot, PLINTH, PLINTH);         // partie « niveau / terrain »
     if (top > (up ? foot : gr)) g.prism(cs, up ? foot : gr, top, hexRGB(b.wallCol), hexRGB(b.roofCol));
@@ -2714,7 +2738,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
     if (underDials(rc)) continue;
     P.add(rc); drawLabel(ctx, rc, t, '#b86e00', null);
   }
-  for (const b of S.buildings) {
+  for (const b of S.showProj ? S.buildings : []) {
     const q = toScreen3(ci.VP, [b.cx, projTop(b), b.cy]);
     if (q) {
       const hh = b === S.building ? S.dH : b.h, t = 'H ' + fmtLen(hh) + ' m' + (b.dz ? ' (' + (b.dz > 0 ? '+' : '−') + fmtLen(Math.abs(b.dz)) + ')' : ''), w = ctx.measureText(t).width + 10;
@@ -2761,9 +2785,9 @@ function pick3B(o, d) {
   const lo = minSceneH(), t0 = Math.max(0, (o[1] - mh) / -d[1]), t1 = (o[1] - lo) / -d[1], step = Math.max(0.5, (t1 - t0) / 20000);
   for (let t = t0; t <= t1 + step; t += step) {
     const x = o[0] + d[0] * t, z = o[2] + d[2] * t, gy = S.terrain ? terrainAt(x, z) * ppm : 0, y = Math.max(gy, o[1] + d[1] * t);
-    for (let i = 0; i < S.buildings.length; i++) { const b = S.buildings[i]; if (y > tops[i]) continue; const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj', bi: i, th: t, part: y > tops[i] - 1.5 * step - 0.3 * ppm ? 'roof' : 'wall' }; }
+    for (let i = 0; i < (S.showProj ? S.buildings.length : 0); i++) { const b = S.buildings[i]; if (y > tops[i]) continue; const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj', bi: i, th: t, part: y > tops[i] - 1.5 * step - 0.3 * ppm ? 'roof' : 'wall' }; }
     const c = nbAt(x, z); if (c && y <= (nbBase(c) + nbHeight(c)) * ppm + 0.5) return { kind: 'nb', c, th: t };
-    if (y <= gy) break;   // sol atteint
+    if (y <= gy) { const c0 = nbAt(x, z); return c0 ? { kind: 'nb', c: c0, th: t } : null; }   // sol atteint (construction à plat comprise)
   }
   return null;
 }
@@ -2771,7 +2795,7 @@ function pick3B(o, d) {
 function planeHit(sx, sy, y) { const { o, d } = ray3(sx, sy); if (Math.abs(d[1]) < 1e-6) return null; const t = (y - o[1]) / d[1]; return t > 0 ? { x: o[0] + d[0] * t, y: o[2] + d[2] * t } : null; }
 /** Poignées de l'immeuble sélectionné, sur son toit, en coordonnées écran. */
 function handles3(ci = camInfo()) {
-  const b = S.building; if (!b || !S.editB) return null;
+  const b = S.building; if (!b || !S.editB || !S.showProj) return null;
   const y = projTop(b), out = [], P = (lx, ly) => { const w = localToWorld(b, lx, ly); return toScreen3(ci.VP, [w.x, y, w.y]); };
   for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) { if (!hx && !hy) continue; const q = P(hx * b.w / 2, hy * b.l / 2); if (q) out.push({ kind: 'size', hx, hy, ...q }); }
   const rq = P(0, -b.l / 2 - Math.max(b.l * 0.25, 3 * pxPerM())), tm = P(0, -b.l / 2); if (rq) out.push({ kind: 'rot', ...rq, tm });
@@ -2977,6 +3001,7 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 function syncTimeOnly() {
+  placeClock();
   const m = Math.round(mod(S.minute, 1440)) % 1440;
   $('fHour').textContent = pad2(Math.floor(m / 60)); $('fMin').textContent = pad2(m % 60); $('rTime').value = m;
 }

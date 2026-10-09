@@ -55,7 +55,8 @@ Le lieu par défaut est Toulouse.
 | Textes d'aide | Le bouton « Aides » en haut du panneau les masque ou les affiche. |
 | Animer | « ▶ Animer la journée » (la nuit est sautée). |
 | Zoom et déplacement du plan | Molette sur le plan pour zoomer. Glisser le fond pour déplacer la vue (ou Maj + clic droit). **Glisser avec le clic droit** passe en 3D en inclinant la vue ; revenir à la verticale repasse en 2D. L'orientation est conservée. |
-| Clic droit (sans bouger) | Menu local : sur l'immeuble (hauteur, couleurs du toit et des murs), une construction (hauteur, affichage des hauteurs), un arbre (transparence, bas du feuillage pour cet arbre ou tous), le fond (luminosité, contraste, opacité de l'ombre, photo, cadastre, arbres), un cadran (pas de la molette). |
+| Afficheur | Sous les cadrans : jour et mois, heure et minutes, avec les boutons Animer, vitesse et Maintenant. |
+| Clic droit (sans bouger) | Menu local : sur l'immeuble (hauteur, couleurs du toit et des murs), une construction (hauteur, retour à la hauteur d'origine, affichage des hauteurs), un arbre (transparence, bas du feuillage pour cet arbre ou tous), le fond (luminosité, contraste, opacité de l'ombre, photo, cadastre, arbres, immeubles projetés visibles ou non), un cadran (pas de la molette). |
 | Clavier | ←/→ ±15 min · ↑/↓ ±1 jour · PgPréc/PgSuiv ±1 mois · +/− hauteur · Espace : animer · Échap : annuler |
 
 ## Enregistrer et imprimer
