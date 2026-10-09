@@ -52,6 +52,7 @@ body.noaide .aide{display:none!important}
 #clockBox #btnPlay{min-width:0}
 #clockBox .row{flex-direction:column;align-items:stretch}
 #clockBox .row>*{width:100%}
+#clockBox label{font-size:12px;text-align:left;cursor:pointer}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
 .warn{color:var(--warn)}
@@ -96,8 +97,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <h2>Site à partir d'une adresse</h2>
     <div class="row"><input type="text" id="addr" placeholder="Adresse (ex. 1 place du Capitole, Toulouse)" style="width:100%;text-align:left"></div>
     <div class="row">
-      <span class="hint">Carré de</span>
-      <select id="siteSize" title="Côté du carré centré sur l'adresse"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
+      <span class="hint">Zone de</span>
+      <select id="siteSize" title="Côté du carré centré sur l'adresse au chargement ; ensuite, agrandir avec les poignées du plan"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
+      <span id="siteDims" class="hint" title="Dimensions actuelles du plan (poignées du plan pour les modifier)"></span>
     </div>
     <div class="row">
       <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cPhoto"> Photo aérienne</label>
@@ -221,7 +223,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Opacité de l'ombre</span><input type="range" id="rOpa" min="0.1" max="0.9" step="0.05" style="flex:1"></div>
     <div class="row"><label><input type="checkbox" id="cOrig" checked> Contour de l'emplacement d'origine</label></div>
     <div class="row"><label><input type="checkbox" id="cDims" checked> Cotes sur le plan</label></div>
-    <div class="row"><label><input type="checkbox" id="cNbLbl" checked> Hauteurs des constructions voisines</label></div>
+    <div class="row"><label><input type="checkbox" id="cNbLbl"> Hauteurs des constructions voisines</label></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Luminosité du fond</span><input type="range" id="rBright" min="-60" max="150" step="5" style="flex:1"><span id="vBright" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Contraste du fond</span><input type="range" id="rContrast" min="40" max="200" step="5" style="flex:1"><span id="vContrast" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px" title="Arbres en 3D : 0 % = opaques ; les ombres des arbres sont atténuées d'autant (feuillage clairsemé, hiver)">Transparence arbres</span><input type="range" id="rTreeT" min="0" max="90" step="5" style="flex:1"><span id="vTreeT" class="hint" style="width:36px;text-align:right"></span></div>
@@ -260,6 +262,8 @@ input.big{font-size:18px;font-weight:600;width:90px}
         <option value="15">très lent</option><option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
         </select>
         <button id="btnNow">Maintenant</button>
+        <label title="Afficher les immeubles projetés"><input type="checkbox" id="cbProj" checked> Immeuble</label>
+        <label title="Ombre des immeubles projetés (décocher pour mieux voir les ombres d'un scénario)"><input type="checkbox" id="cbShadow" checked> Ombre</label>
     </div>
     </div>
   </div>
@@ -311,7 +315,7 @@ const S = {
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
   traj: [], scenario: [], showScenario: true, showCurrent: true,
-  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: true, showTrees: true, showProj: true,
+  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: false, showTrees: true, showProj: true, showProjShadow: true,
   mode: 'select', temp: null, playing: false, playSpeed: 60,
   dirty: true
 };
@@ -852,7 +856,7 @@ function render(ctx, W, H, v, opt = {}) {
       scen.push({ e, so, col, poly });
     });
     if (!S.showScenario || !S.scenario.length || S.showCurrent) {
-      if (shadowsPath(sun)) { ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
+      if (S.showProjShadow && shadowsPath(sun)) { ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
     }
     for (const bb of BL) {
       polyPath(ctx, corners(bb)); ctx.globalAlpha = bb === b ? 0.88 : 0.65; ctx.fillStyle = bb.roofCol; ctx.fill(); ctx.globalAlpha = 1;
@@ -1272,7 +1276,11 @@ function setUtcMode(u) {
 }
 $('btnLocal').onclick = () => setUtcMode(false);
 $('btnUTC').onclick = () => setUtcMode(true);
+function stopPlay() { if (S.playing) togglePlay(); }
+$('cbProj').onchange = e => { S.showProj = e.target.checked; if (!S.showProj) S.editB = false; changed(); };
+$('cbShadow').onchange = e => { S.showProjShadow = e.target.checked; changed(); };
 $('btnNow').onclick = () => {
+  stopPlay();
   const now = Date.now(), off = S.utcMode ? 0 : S.tzStd + (S.dstAuto && isEUDST(now) ? 1 : 0), loc = now / 6e4 + off * 60;
   S.day = Math.floor(loc / 1440); S.minute = loc - S.day * 1440; changed();
 };
@@ -1412,6 +1420,8 @@ function syncUI() {
   document.body.classList.toggle('noaide', !S.showAide); $('btnAides').textContent = 'Aides : ' + (S.showAide ? 'oui' : 'non');
   $('cHigh').checked = S.hHigh; $('rowHigh').hidden = !S.terrain;
   if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
+  $('siteDims').textContent = S.site && S.site.Lx ? 'actuelle : ' + fmtNum(S.site.Lx, 0) + ' × ' + fmtNum(S.site.Ly, 0) + ' m' : '';
+  $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow;
   $('cPhoto').checked = S.bgMode === 'ortho'; $('cCad').checked = S.showCad;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
@@ -1501,7 +1511,7 @@ $('btnSaveProj').onclick = async () => {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1516,7 +1526,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = im.width; cc.height = im.height; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'showProjShadow', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -2366,6 +2376,7 @@ const dialAng = (p, kind) => { const L = dialLayout(), c = kind === 'compass' ? 
 /** Glisser sur le cadran : l'heure dont l'ombre du style suit le pointeur. */
 let dialRot = 0;
 function dialSetTime(p) {
+  stopPlay();
   const target = dialAng(p, 'sundial') - dialRot, day = Math.round(S.day), d0 = S.minute - mod(S.minute, 1440);
   let best = null, bd = 1e9;
   for (let m = 0; m < 1440; m += 2) {
@@ -2405,6 +2416,7 @@ function dialWheelEvt(kind, e) {
   else rotateView(dir * S.compStep * D2R);
 }
 function dialWheel(dir) {
+  stopPlay();
   const st = Math.max(15, Math.round(S.dialStep * 60)), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);
   const k = (m - 720) / st, nk = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
   S.minute = d0 + 720 + nk * st; changed();
@@ -2412,6 +2424,7 @@ function dialWheel(dir) {
 function dialUp(d) {
   if (d.moved || d.kind === 'calendar') return;
   if (d.kind === 'sundial') {   // midi solaire
+    stopPlay();
     const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + Math.round(ev.noon); changed();
   } else rotateView(null);
 }
@@ -2818,7 +2831,7 @@ function draw3d() {
   gl.uniform1i(G.depth.u.uIds, 1); gl.uniform1f(G.depth.u.uIdScale, NB ? NB.f : 1);
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3);
   if (S.terrain) drawBuf('ground');   // le relief porte aussi des ombres
-  drawBuf('nb'); drawBuf('proj');
+  drawBuf('nb'); if (S.showProjShadow) drawBuf('proj');   // sans ombre : l'immeuble reste visible mais ne porte pas d'ombre
   // carte d'ombre des arbres
   gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo2); gl.viewport(0, 0, G.sm2, G.sm2); gl.clear(gl.DEPTH_BUFFER_BIT);
   if (S.showTrees) drawBuf('veg');

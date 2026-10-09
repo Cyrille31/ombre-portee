@@ -11,7 +11,7 @@ L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir 
 
 Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la taille du carré (100 à 800 m) et le fond de plan, puis cliquez sur **Charger le site**. Le logiciel télécharge auprès de l'IGN (Géoplateforme, gratuit, sans compte) :
 
-- le **fond de plan** : plan IGN, photo aérienne et cadastre, à l'échelle exacte, nord en haut. Les cases « Photo aérienne » (sinon plan IGN) et « Cadastre » changent le fond aussitôt, sans recharger ;
+- le **fond de plan** : plan IGN, photo aérienne et cadastre, à l'échelle exacte, nord en haut. Les dimensions actuelles de la zone s'affichent à côté de « Zone de ». Les cases « Photo aérienne » (sinon plan IGN) et « Cadastre » changent le fond aussitôt, sans recharger ;
 - les **bâtiments** de la BD TOPO, avec leur contour exact, leur hauteur jusqu'au faîtage et l'altitude de leur pied. Là où le LiDAR existe, la **forme du toit** (pentes, pignons) est tirée du modèle de surface ; la hauteur maximale reste réglable par clic droit ;
 - le **relief** : modèle de terrain LiDAR HD au demi-mètre, complété par le RGE ALTI là où le LiDAR manque.
 - les **arbres** : hauteur de la végétation = modèle de surface LiDAR HD − terrain, hors bâtiments. Chaque houppier est repéré et dessiné en arbre (tronc jusqu'au quart de la hauteur, houppier qui s'évase dès le tiers) ; haies et arbustes restent en masse continue. La case « Arbres » les affiche ou les masque aussitôt, et « Transparence arbres » atténue leur feuillage et leurs ombres (arbres dénudés en hiver).
@@ -57,7 +57,7 @@ Le lieu par défaut est Toulouse.
 | Textes d'aide | Le bouton « Aides » en haut du panneau les masque ou les affiche. |
 | Animer | « ▶ Animer la journée » (la nuit est sautée). |
 | Zoom et déplacement du plan | Molette sur le plan pour zoomer. Glisser le fond pour déplacer la vue (ou Maj + clic droit). **Glisser avec le clic droit** passe en 3D en inclinant la vue ; revenir à la verticale repasse en 2D. L'orientation est conservée. |
-| Afficheur | Sous les cadrans : jour et mois, heure et minutes, avec les boutons Animer, vitesse (de très lent à très rapide) et Maintenant. |
+| Afficheur | Sous les cadrans : jour et mois, heure et minutes, avec les boutons Animer, vitesse (de très lent à très rapide) et Maintenant (qui arrête l'animation, comme un choix d'heure sur le cadran). Cases « Immeuble » (afficher les immeubles projetés) et « Ombre » (masquer leur ombre pour mieux lire un scénario). |
 | Règle | Clic droit sur le fond → « Règle depuis ce point » : la longueur suit la souris (avec le dénivelé si le relief est connu) ; clic gauche pour la fixer ; un nouveau clic l'efface. |
 | Clic droit (sans bouger) | Menu local : sur l'immeuble (hauteur, couleurs du toit et des murs), une construction (hauteur, retour à la hauteur d'origine, affichage des hauteurs), un arbre (transparence, bas du feuillage pour cet arbre ou tous), le fond (luminosité, contraste, opacité de l'ombre, photo, cadastre, arbres, immeubles projetés visibles ou non), un cadran (pas de la molette). |
 | Clavier | ←/→ ±15 min · ↑/↓ ±1 jour · PgPréc/PgSuiv ±1 mois · +/− hauteur · Espace : animer · Échap : annuler |
