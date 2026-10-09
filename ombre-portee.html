@@ -43,6 +43,8 @@ input[type=range]{width:100%}
 .sc:hover{background:var(--accent-soft);border-color:#b9c9f5}
 .sc.big{font-size:26px}
 .hint{color:var(--muted);font-size:11.5px}
+body.noaide .aide{display:none!important}
+#btnPlay{min-width:84px}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
 .warn{color:var(--warn)}
@@ -78,7 +80,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
 <body>
 <div id="app">
 <aside>
-  <h1>☀ Ombre portée</h1>
+  <h1 style="display:flex;align-items:center;gap:8px">☀ Ombre portée <button id="btnAides" class="small" style="margin-left:auto" title="Afficher ou masquer les textes d'aide">Aides : oui</button></h1>
 
   <section>
     <h2>Site à partir d'une adresse</h2>
@@ -86,14 +88,14 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row">
       <span class="hint">Carré de</span>
       <select id="siteSize" title="Côté du carré centré sur l'adresse"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
-      <select id="siteBg" title="Fond de plan (changement immédiat)"><option value="plan">Plan IGN</option><option value="ortho">Photo aérienne</option><option value="none">Fond blanc</option></select>
     </div>
     <div class="row">
+      <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cPhoto"> Photo aérienne</label>
       <label title="Parcelles du cadastre en surimpression"><input type="checkbox" id="cCad" checked> Cadastre</label>
       <label title="Arbres issus du LiDAR HD (modèle de surface − terrain, hors bâtiments)"><input type="checkbox" id="cShowTrees" checked> Arbres</label>
     </div>
-    <div class="row"><button id="btnSite" class="on">Charger le site</button><span id="addrFound" class="hint"></span></div>
-    <div class="hint">Télécharge auprès de l'IGN le fond de plan, les bâtiments avec leur hauteur (BD TOPO) et le relief (LiDAR HD, à défaut RGE ALTI). Nécessite Internet ; le projet enregistré fonctionne ensuite hors ligne.</div>
+    <div class="row"><button id="btnSite" class="on">Charger le site</button><span id="addrFound" class="hint aide"></span></div>
+    <div class="hint aide">Télécharge auprès de l'IGN le fond de plan, les bâtiments avec leur hauteur (BD TOPO) et le relief (LiDAR HD, à défaut RGE ALTI). Nécessite Internet ; le projet enregistré fonctionne ensuite hors ligne.</div>
   </section>
 
   <section>
@@ -105,34 +107,35 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <span style="width:10px"></span>
       <span class="sc big" id="fHour">12</span><span class="big" style="font-size:26px">:</span><span class="sc big" id="fMin">00</span>
     </div>
-    <div class="hint">Molette sur le jour, le mois, l'année, l'heure ou les minutes (Maj = pas fin). Double-clic pour saisir.</div>
+    <div class="hint aide">Molette sur le jour, le mois, l'année, l'heure ou les minutes (Maj = pas fin). Double-clic pour saisir.</div>
     <div class="row">
       <div class="seg"><button id="btnLocal">Heure locale</button><button id="btnUTC">TU</button></div>
-      <span id="tzInfo" class="hint"></span>
+      <span id="tzInfo" class="hint aide"></span>
     </div>
     <div class="row" style="gap:2px"><span class="hint" style="width:44px">Heure</span><input type="range" id="rTime" min="0" max="1439" step="1" style="flex:1"></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:44px">Jour</span><input type="range" id="rDay" min="0" max="365" step="1" style="flex:1"></div>
+    <div class="f"><span class="lbl drag" data-for="iDialStep" title="Molette sur le cadran solaire : saut d'heure en heure, calé sur midi">Pas du cadran</span><input type="text" id="iDialStep"><span class="u">h</span></div>
     <div class="row">
-      <button id="btnPlay">▶ Animer la journée</button>
+      <button id="btnPlay" title="Animer la journée (Espace)">▶ Animer</button>
       <select id="playSpeed" title="Vitesse d'animation">
         <option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
       </select>
       <button id="btnNow">Maintenant</button>
     </div>
-    <div id="sunInfo" class="info"></div>
+    <div id="sunInfo" class="info aide"></div>
   </section>
 
   <section>
     <h2>Immeuble</h2>
     <div class="row" id="bldList"></div>
     <div class="f"><span class="lbl drag" data-for="iH"><b>Hauteur</b></span><input type="text" id="iH" class="big"><span class="u">m</span><span id="levels" class="hint"></span></div>
-    <div class="f"><span class="lbl drag" data-for="iDz">Niveau / terrain</span><input type="text" id="iDz"><span class="u">m</span></div>
-    <div class="hint">Sol en pente : niveau du pied de l'immeuble par rapport au terrain où tombe l'ombre (+ = plus haut). L'ombre est celle d'une hauteur H + niveau.</div>
+    <div class="row" id="rowHigh"><label title="Sur un terrain en pente : la hauteur est comptée depuis le point le plus haut (sinon le plus bas) du terrain sous l'immeuble"><input type="checkbox" id="cHigh"> Hauteur comptée depuis le point le plus haut du terrain</label></div>
     <div class="f"><span class="lbl drag" data-for="iW">Longueur</span><input type="text" id="iW"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iL">Largeur</span><input type="text" id="iL"><span class="u">m</span></div>
     <div class="f"><span class="lbl drag" data-for="iA">Rotation</span><input type="text" id="iA"><span class="u">°</span></div>
     <div class="f"><span class="lbl">Emprise au sol</span><b id="footprint"></b></div>
-    <div class="hint">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
+    <div class="row"><span class="hint" style="width:110px">Couleurs</span><label class="hint">toit <input type="color" id="colRoof"></label><label class="hint">murs <input type="color" id="colWall"></label></div>
+    <div class="hint aide">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
     <div class="row">
       <button id="btnDraw" title="Tracer un nouvel immeuble sur le plan">Dessiner un immeuble</button>
       <button id="btnAddB" title="Ajoute une copie de l'immeuble sélectionné, à côté">+ Copie</button>
@@ -145,7 +148,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <h2>Constructions voisines</h2>
     <div id="nbInfo" class="hint"></div>
     <div class="f"><span class="lbl drag" data-for="iDefH">Hauteur par défaut</span><input type="text" id="iDefH"><span class="u">m</span></div>
-    <div class="hint">Les constructions orange du plan sont détectées automatiquement (même coupées par un trait noir). <b>Clic droit</b> sur une construction, en 2D ou en 3D, pour saisir sa hauteur (molette pour la régler). La hauteur par défaut s'applique aux constructions sans hauteur saisie (0 = à plat).</div>
+    <div class="hint aide">Les constructions orange du plan sont détectées automatiquement (même coupées par un trait noir). <b>Clic droit</b> sur une construction, en 2D ou en 3D, pour saisir sa hauteur (molette pour la régler). La hauteur par défaut s'applique aux constructions sans hauteur saisie (0 = à plat).</div>
     <div class="row"><button id="btnNbClear" class="small">Effacer toutes les hauteurs</button></div>
   </section>
 
@@ -156,9 +159,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="f"><span class="lbl drag" data-for="iLon">Longitude</span><input type="text" id="iLon"><span class="u">° E</span></div>
     <div class="f"><span class="lbl drag" data-for="iTz">Fuseau horaire</span><input type="text" id="iTz"><span class="u" title="Décalage par rapport au temps universel, en heure d'hiver">h (hiver)</span></div>
     <div class="row"><label><input type="checkbox" id="cDst"> Changement d'heure automatique (règle européenne)</label></div>
-    <div id="tzNow" class="hint"></div>
+    <div id="tzNow" class="hint aide"></div>
     <div class="f"><span class="lbl drag" data-for="iNorth">Nord du plan</span><input type="text" id="iNorth"><span class="u">°</span></div>
-    <div class="hint">0° = nord en haut du plan ; valeur positive = nord tourné dans le sens horaire.</div>
+    <div class="hint aide">0° = nord en haut du plan ; valeur positive = nord tourné dans le sens horaire.</div>
   </section>
 
   <section>
@@ -175,7 +178,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
   <section>
     <h2>Trajectoire de l'ombre d'un point</h2>
     <div class="row"><button id="btnTraj">Choisir un point du toit…</button><button id="btnTrajClear" class="small">Tout effacer</button></div>
-    <div class="hint">Cliquez sur un coin (aimanté) ou un point du toit : la courbe de son ombre pour la journée choisie est tracée, graduée heure par heure.</div>
+    <div class="hint aide">Cliquez sur un coin (aimanté) ou un point du toit : la courbe de son ombre pour la journée choisie est tracée, graduée heure par heure.</div>
     <ul id="trajList" class="list"></ul>
   </section>
 
@@ -206,7 +209,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
       </select>
     </div>
     <div class="row"><label title="Heure solaire vraie : 12 h = passage du soleil plein sud"><input type="checkbox" id="cSolar"> Heures des modèles en heure solaire (sinon heure légale)</label></div>
-    <div class="hint">Les instants où le soleil est couché ne sont pas ajoutés.</div>
+    <div class="hint aide">Les instants où le soleil est couché ne sont pas ajoutés.</div>
     <ul id="scenList" class="list"></ul>
   </section>
 
@@ -219,7 +222,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Luminosité du fond</span><input type="range" id="rBright" min="-60" max="60" step="5" style="flex:1"><span id="vBright" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Contraste du fond</span><input type="range" id="rContrast" min="40" max="200" step="5" style="flex:1"><span id="vContrast" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px" title="Arbres en 3D : 0 % = opaques ; les ombres des arbres sont atténuées d'autant (feuillage clairsemé, hiver)">Transparence arbres</span><input type="range" id="rTreeT" min="0" max="90" step="5" style="flex:1"><span id="vTreeT" class="hint" style="width:36px;text-align:right"></span></div>
-    <div class="hint" style="margin-top:8px">
+    <div class="hint aide" style="margin-top:8px">
       Plan : molette = zoom, glisser le fond (ou clic droit) = déplacer, clic droit sur une construction = sa hauteur.<br>
       3D : Maj + glisser (ou clic droit + glisser) = pivoter / incliner, glisser = déplacer la vue ou l'immeuble.<br>
       Clavier : ←/→ ±15 min, ↑/↓ ±1 jour, PgPréc/PgSuiv ±1 mois, +/− hauteur, Espace = animer, Échap = annuler.
@@ -294,7 +297,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, hHigh: false, dialStep: 3, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -307,7 +310,8 @@ const V = { s: 1, ox: 0, oy: 0 };
 // Immeubles projetés : S.buildings ; S.building, S.height et S.dz désignent l'immeuble sélectionné
 let bidSeq = 0;
 S.buildings = []; S.sel = -1; S._h = 15; S._dz = 0;
-function normB(v) { return { id: v.id || ++bidSeq, cx: v.cx, cy: v.cy, w: v.w, l: v.l, a: v.a || 0, h: v.h !== undefined ? v.h : S._h, dz: v.dz !== undefined ? v.dz : S._dz }; }
+const ROOF_COL = '#40c766', WALL_COL = '#16a34a';
+function normB(v) { return { id: v.id || ++bidSeq, cx: v.cx, cy: v.cy, w: v.w, l: v.l, a: v.a || 0, h: v.h !== undefined ? v.h : S._h, dz: 0, roofCol: v.roofCol || ROOF_COL, wallCol: v.wallCol || WALL_COL }; }
 Object.defineProperties(S, {
   building: { configurable: true, get() { return this.buildings[this.sel] || null; }, set(v) { this.buildings = v ? [normB(v)] : []; this.sel = v ? 0 : -1; } },
   height: { configurable: true, get() { const b = this.building; return b ? b.h : this._h; }, set(v) { const b = this.building; if (b) b.h = v; this._h = v; } },
@@ -836,7 +840,7 @@ function render(ctx, W, H, v, opt = {}) {
       if (shadowsPath(sun)) { ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
     }
     for (const bb of BL) {
-      polyPath(ctx, corners(bb)); ctx.fillStyle = bb === b ? 'rgba(22,163,74,0.85)' : 'rgba(22,163,74,0.6)'; ctx.fill();
+      polyPath(ctx, corners(bb)); ctx.globalAlpha = bb === b ? 0.88 : 0.65; ctx.fillStyle = bb.roofCol; ctx.fill(); ctx.globalAlpha = 1;
       ctx.strokeStyle = BLD_DARK; ctx.lineWidth = (bb === b ? 2 : 1.2) * px; ctx.stroke();
     }
   }
@@ -1127,6 +1131,7 @@ cv.addEventListener('pointerup', e => {
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault(); if (!S.clean) return;
+  if (dialHit(evPos(e)) === 'sundial') { if (Math.abs(normWheel(e)) >= 4) dialWheel(normWheel(e) < 0 ? 1 : -1); return; }
   const p = evPos(e), f = Math.exp(-normWheel(e) * 0.0015), w = toW(p);
   V.s = clamp(V.s * f, 0.02, 40); V.ox = p.x - w.x * V.s; V.oy = p.y - w.y * V.s; S.dirty = true;
 }, { passive: false });
@@ -1185,7 +1190,7 @@ function numField(id, o) {
 }
 const B = () => S.building;
 numField('iH', { get: () => S.height, set: v => S.height = v, step: 1, fine: 0.1, dec: 1, min: 0, max: 1000 });
-numField('iDz', { get: () => S.dz, set: v => S.dz = v, step: 0.5, fine: 0.1, dec: 2, min: -200, max: 200 });
+numField('iDialStep', { get: () => S.dialStep, set: v => S.dialStep = v, step: 0.5, fine: 0.25, dec: 2, min: 0.25, max: 12 });
 numField('iDefH', { get: () => S.defH, set: v => { S.defH = v; S.hVer++; }, step: 0.5, fine: 0.1, dec: 2, min: 0, max: 500 });
 numField('iW', { get: () => B().w / pxPerM(), set: v => B().w = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iL', { get: () => B().l / pxPerM(), set: v => B().l = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
@@ -1239,7 +1244,7 @@ $('playSpeed').onchange = e => S.playSpeed = +e.target.value;
 function togglePlay() {
   S.playing = !S.playing;
   if (S.playing) { const ev = dayEvents(S.day, S.utcMode); const m = mod(S.minute, 1440); if (ev.rise !== null && (m < ev.rise || (ev.set !== null && m > ev.set))) { S.minute += mod(ev.rise - m, 1440); S.dMin = S.minute; } }
-  $('btnPlay').textContent = S.playing ? '⏸ Pause' : '▶ Animer la journée';
+  $('btnPlay').textContent = S.playing ? '⏸ Pause' : '▶ Animer';
 }
 const citySel = $('city');
 CITIES.forEach(([n, la, lo]) => { const o = document.createElement('option'); o.value = la + ',' + lo; o.textContent = n; citySel.appendChild(o); });
@@ -1257,7 +1262,15 @@ $('rBright').oninput = e => { S.bright = +e.target.value; changed(); };
 $('rContrast').oninput = e => { S.contrast = +e.target.value; changed(); };
 $('rTreeT').oninput = e => { S.treeT = +e.target.value; changed(); };
 for (const [id, k] of [['rBright', 'bright'], ['rContrast', 'contrast'], ['rTreeT', 'treeT']]) $(id).addEventListener('dblclick', () => { S[k] = k === 'contrast' ? 100 : 0; changed(); });
-$('siteBg').onchange = e => { S.bgMode = e.target.value; if (S.layers) composeSite(); changed(); };
+$('btnAides').onclick = () => { S.showAide = !S.showAide; try { localStorage.setItem('ombre-portee-aides', S.showAide ? '1' : '0'); } catch (e) { } changed(); };
+try { if (localStorage.getItem('ombre-portee-aides') === '0') S.showAide = false; } catch (e) { }
+$('cHigh').onchange = e => { S.hHigh = e.target.checked; changed(); };
+$('colRoof').oninput = e => { if (S.building) { S.building.roofCol = e.target.value; changed(); } };
+$('colWall').oninput = e => { if (S.building) { S.building.wallCol = e.target.value; changed(); } };
+// curseurs : molette
+for (const [id, k, st, lo, hi] of [['rOpa', 'opacity', 0.05, 0.1, 0.9], ['rBright', 'bright', 5, -60, 60], ['rContrast', 'contrast', 5, 40, 200], ['rTreeT', 'treeT', 5, 0, 90]])
+  attachScrub($(id), n => { S[k] = clamp(Math.round((S[k] + n * st) / st) * st, lo, hi); changed(); });
+$('cPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) composeSite(); changed(); };
 $('cCad').onchange = e => { S.showCad = e.target.checked; if (S.layers) composeSite(); changed(); };
 
 // immeuble, échelle, modes
@@ -1329,7 +1342,7 @@ $('scenPreset').onchange = e => {
   let st = {}; try { st = JSON.parse(localStorage.getItem('ombre-portee-sections') || '{}'); } catch (e) { }
   document.querySelectorAll('aside section').forEach(sec => {
     const h = sec.querySelector('h2'), key = h.textContent.trim();
-    if (st[key]) sec.classList.add('collapsed');
+    if (st[key] || /^Lieu et orientation|^Échelle/.test(key)) sec.classList.add('collapsed');   // réduites au lancement
     h.title = 'Cliquer pour replier / déplier';
     h.addEventListener('click', () => {
       st[key] = sec.classList.toggle('collapsed');
@@ -1358,7 +1371,10 @@ function syncUI() {
   $('rBright').value = S.bright; $('vBright').textContent = (S.bright > 0 ? '+' : '') + S.bright + ' %';
   $('rContrast').value = S.contrast; $('vContrast').textContent = S.contrast + ' %';
   $('rTreeT').value = S.treeT; $('vTreeT').textContent = S.treeT + ' %';
-  $('siteBg').value = S.bgMode; $('cCad').checked = S.showCad;
+  document.body.classList.toggle('noaide', !S.showAide); $('btnAides').textContent = 'Aides : ' + (S.showAide ? 'oui' : 'non');
+  $('cHigh').checked = S.hHigh; $('rowHigh').hidden = !S.terrain;
+  if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
+  $('cPhoto').checked = S.bgMode === 'ortho'; $('cCad').checked = S.showCad;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
   { const bl = $('bldList'); bl.innerHTML = '';
@@ -1447,7 +1463,7 @@ $('btnSaveProj').onclick = async () => {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { cx: (CW / 2 - V.ox) / V.s, cy: (CH / 2 - V.oy) / V.s, s: V.s }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1462,7 +1478,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = cc.height = im.width; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -1962,7 +1978,7 @@ function segmentTrees(h, n, T) {
 /** Convergence des méridiens en Lambert-93 : angle du nord géographique par rapport au haut du plan. */
 const l93North = lon => 0.7256077650 * (3 - lon);
 async function loadSite() {
-  const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000), bg = $('siteBg').value;
+  const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000), bg = S.bgMode;
   if (!q) { $('addr').focus(); return; }
   const btn = $('btnSite'); btn.disabled = true;
   try {
@@ -2099,23 +2115,24 @@ function drawDials(ctx, W, H, n, sun) {
   }
   ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
-  // cadran solaire horizontal (midi solaire en haut)
+  // cadran solaire horizontal, orienté comme le plan : l'ombre du style a la direction des ombres des immeubles
+  const rot = Math.atan2(nx, -ny); L.rot = rot; dialRot = rot;
   ctx.fillStyle = 'rgba(255,253,245,0.94)'; ctx.strokeStyle = '#b9a77a'; ctx.lineWidth = 1.2;
   ctx.beginPath(); ctx.arc(sx, sy, R, 0, 7); ctx.fill(); ctx.stroke();
   const day = Math.round(S.dDay), d0 = S.minute - mod(S.minute, 1440);
   ctx.font = '10px system-ui, sans-serif';
   for (let h = 0; h < 24; h++) for (const half of [0, 30]) {
     const { a, alt } = dialAngle(day, h * 60 + half); if (alt <= 0) continue;
-    const ux = Math.sin(a), uy = -Math.cos(a);
+    const ux = Math.sin(a + rot), uy = -Math.cos(a + rot);
     ctx.strokeStyle = half ? '#d8cba8' : '#9c8a5c'; ctx.lineWidth = half ? 0.8 : 1.2;
     ctx.beginPath(); ctx.moveTo(sx + ux * (half ? R * 0.6 : R * 0.25), sy + uy * (half ? R * 0.6 : R * 0.25)); ctx.lineTo(sx + ux * R * 0.68, sy + uy * R * 0.68); ctx.stroke();
     if (!half) { ctx.fillStyle = '#6b5a2e'; ctx.fillText(String(h), sx + ux * (R * 0.84), sy + uy * (R * 0.84)); }
   }
   const cur = dialAngle(day, mod(S.dMin, 1440));
   // style (gnomon) vers le nord-midi, et son ombre
-  ctx.strokeStyle = '#7a6a40'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy - R * 0.22); ctx.stroke();
+  ctx.strokeStyle = '#7a6a40'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.sin(rot) * R * 0.22, sy - Math.cos(rot) * R * 0.22); ctx.stroke();
   if (cur.alt > 0) {
-    const ux = Math.sin(cur.a), uy = -Math.cos(cur.a);
+    const ux = Math.sin(cur.a + rot), uy = -Math.cos(cur.a + rot);
     ctx.strokeStyle = 'rgba(30,30,45,0.85)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + ux * (R - 6), sy + uy * (R - 6)); ctx.stroke(); ctx.lineCap = 'butt';
     ctx.fillStyle = '#223'; ctx.beginPath(); ctx.arc(sx + ux * (R - 6), sy + uy * (R - 6), 4.5, 0, 7); ctx.fill();
@@ -2135,8 +2152,9 @@ function dialHit(p) {
 }
 const dialAng = (p, kind) => { const L = dialLayout(), c = kind === 'compass' ? [L.cx, L.cy] : [L.sx, L.sy]; return Math.atan2(p.x - c[0], -(p.y - c[1])); };
 /** Glisser sur le cadran : l'heure dont l'ombre du style suit le pointeur. */
+let dialRot = 0;
 function dialSetTime(p) {
-  const target = dialAng(p, 'sundial'), day = Math.round(S.day), d0 = S.minute - mod(S.minute, 1440);
+  const target = dialAng(p, 'sundial') - dialRot, day = Math.round(S.day), d0 = S.minute - mod(S.minute, 1440);
   let best = null, bd = 1e9;
   for (let m = 0; m < 1440; m += 2) {
     const { a, alt } = dialAngle(day, m); if (alt <= 0) continue;
@@ -2154,6 +2172,14 @@ function dialMove(d, p) {
   if (S.view3d) G.cam.yaw = mod(G.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI;
   else { S.north = Math.round((mod(S.north + da * R2D + 180, 360) - 180) * 10) / 10; changed(); }
   S.dirty = true;
+}
+/** Molette sur le cadran : sauts de « Pas du cadran » heures, calés sur midi. */
+let lastDialWheel = 0;
+function dialWheel(dir) {
+  const now = performance.now(); if (now - lastDialWheel < 140) return; lastDialWheel = now;
+  const st = Math.max(15, Math.round(S.dialStep * 60)), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);
+  const k = (m - 720) / st, nk = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
+  S.minute = d0 + 720 + nk * st; changed();
 }
 function dialUp(d) {
   if (d.moved) return;
@@ -2198,7 +2224,7 @@ const FS_MAIN = `#version 300 es
 precision highp float; precision highp sampler2DShadow;
 uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
 uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
-uniform float uBright; uniform float uContrast; uniform float uTreeOpa;
+uniform float uBright; uniform float uContrast; uniform float uTreeOpa; uniform float uShadowK;
 in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL;
 out vec4 oCol;
 ${GLSL_ID}
@@ -2222,8 +2248,9 @@ void main() {
   bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
   vec3 base = tex ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
   if (tex || tree) base = clamp((base * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste
-  if (n.y > 0.5) k = mix(0.6, 1.0, l);                    // sol et toits
-  else k = 0.5 + 0.5 * l * (0.35 + 0.65 * max(nd, 0.0));  // murs
+  // uShadowK : clarté à l'ombre, réglée par « Opacité de l'ombre »
+  if (n.y > 0.5) k = mix(uShadowK, 1.0, l);                                 // sol et toits
+  else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
   oCol = vec4(base * k, crown ? uTreeOpa : 1.0);
 }`;
 const VS_DEPTH = `#version 300 es
@@ -2333,6 +2360,7 @@ function drawBuf(name) {
   [[0, 3, 0], [1, 3, 12], [2, 4, 24], [3, 1, 40]].forEach(([l, n, o]) => { gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, n, gl.FLOAT, false, 44, o); });
   gl.drawArrays(gl.TRIANGLES, 0, b.n);
 }
+const hexRGB = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255, 1]; };
 const WALL = [0.93, 0.72, 0.43, 1], GREEN = [0.13, 0.64, 0.29, 1], GREEN_TOP = [0.25, 0.78, 0.4, 1], PLINTH = [0.66, 0.56, 0.45, 1];
 const TREE = [0.27, 0.47, 0.2, 0.6], TRUNK = [0.42, 0.31, 0.2, 0.7];
 function buildVeg() {
@@ -2410,8 +2438,8 @@ function buildNeighbors() {
 /** Immeuble projeté : altitudes (m) du terrain sous lui, du pied (terrain + niveau) et du toit. */
 function projGeom(b = S.building) {
   if (!b) return null;
-  const zb = S.terrain ? Math.min(...corners(b).map(p => terrainAt(p.x, p.y))) : 0;
-  const foot = zb + b.dz, ground = S.terrain ? zb - 0.5 : 0;
+  const zs = S.terrain ? corners(b).map(p => terrainAt(p.x, p.y)) : [0];
+  const zb = S.hHigh ? Math.max(...zs) : Math.min(...zs), foot = zb + b.dz, ground = S.terrain ? Math.min(...zs) - 0.5 : 0;
   return { zb, ground, foot, top: Math.max(ground, foot + (b === S.building ? S.dH : b.h)) };
 }
 function projTop(b) { const g = projGeom(b); return g ? g.top * pxPerM() : 0; }
@@ -2420,7 +2448,7 @@ function buildProject() {
   for (const b of S.buildings) {
     const cs = corners(b), pg = projGeom(b), foot = pg.foot * ppm, gr = pg.ground * ppm, top = pg.top * ppm, up = b.dz > 0;
     if (up) g.prism(cs, gr, foot, PLINTH, PLINTH);         // partie « niveau / terrain »
-    if (top > (up ? foot : gr)) g.prism(cs, up ? foot : gr, top, GREEN, b === S.building ? GREEN_TOP : GREEN);
+    if (top > (up ? foot : gr)) g.prism(cs, up ? foot : gr, top, hexRGB(b.wallCol), hexRGB(b.roofCol));
   }
   setBuf('proj', g);
   const W = S.clean.width, H = S.clean.height, key = [W, H, ppm].join('|');
@@ -2507,6 +2535,7 @@ function draw3d() {
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex2); gl.uniform1i(m.u.uShadowT, 3);
   const opa = 1 - S.treeT / 100;
   gl.uniform1f(m.u.uTexelT, 1 / G.sm2); gl.uniform1f(m.u.uTreeOpa, opa);
+  gl.uniform1f(m.u.uShadowK, clamp(1 - S.opacity * 0.9, 0.05, 1));
   gl.uniform1f(m.u.uBright, 1 + S.bright / 100); gl.uniform1f(m.u.uContrast, S.contrast / 100);
   drawBuf('ground'); drawBuf('nb'); drawBuf('proj');
   if (S.showTrees) {   // arbres en dernier : feuillage éventuellement transparent
@@ -2540,6 +2569,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
       drawLabel(ctx, P.place(q.x, q.y, w, 18, -Math.PI / 2), t, BLD_DARK, q);
     }
   }
+  if (S.mode === 'select') drawHandles3(ctx, ci);
   // boussole (nord projeté à l'écran) et cadran solaire
   const o = toScreen3(ci.VP, ci.target);
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
@@ -2568,6 +2598,29 @@ function pick3(sx, sy) {
     if (y <= gy) break;   // sol atteint
   }
   return null;
+}
+/** Point visé sur un plan horizontal d'altitude y (px). */
+function planeHit(sx, sy, y) { const { o, d } = ray3(sx, sy); if (Math.abs(d[1]) < 1e-6) return null; const t = (y - o[1]) / d[1]; return t > 0 ? { x: o[0] + d[0] * t, y: o[2] + d[2] * t } : null; }
+/** Poignées de l'immeuble sélectionné, sur son toit, en coordonnées écran. */
+function handles3(ci = camInfo()) {
+  const b = S.building; if (!b || !S.edit3d) return null;
+  const y = projTop(b), out = [], P = (lx, ly) => { const w = localToWorld(b, lx, ly); return toScreen3(ci.VP, [w.x, y, w.y]); };
+  for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) { if (!hx && !hy) continue; const q = P(hx * b.w / 2, hy * b.l / 2); if (q) out.push({ kind: 'size', hx, hy, ...q }); }
+  const rq = P(0, -b.l / 2 - Math.max(b.l * 0.25, 3 * pxPerM())), tm = P(0, -b.l / 2); if (rq) out.push({ kind: 'rot', ...rq, tm });
+  out.corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([u, v]) => P(u * b.w / 2, v * b.l / 2));
+  return out;
+}
+function drawHandles3(ctx, ci) {
+  const hs = handles3(ci); if (!hs || hs.corners.some(q => !q)) return;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; polyPath(ctx, hs.corners); ctx.stroke();
+  ctx.strokeStyle = BLD_DARK; ctx.lineWidth = 1.5; polyPath(ctx, hs.corners); ctx.stroke();
+  const r = hs.find(h => h.kind === 'rot');
+  if (r && r.tm) { ctx.beginPath(); ctx.moveTo(r.tm.x, r.tm.y); ctx.lineTo(r.x, r.y); ctx.stroke(); }
+  for (const h of hs) {
+    ctx.fillStyle = '#fff';
+    if (h.kind === 'rot') { ctx.beginPath(); ctx.arc(h.x, h.y, 7, 0, 7); ctx.fill(); ctx.stroke(); }
+    else { ctx.fillRect(h.x - 5, h.y - 5, 10, 10); ctx.strokeRect(h.x - 5, h.y - 5, 10, 10); }
+  }
 }
 function enter3D() {
   if (S.view3d) return true;
@@ -2611,12 +2664,34 @@ glcv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return;
   { const dk = dialHit(p); if (dk) { drag3 = dialDown(p, dk); return; } }
   if (e.shiftKey) return startOrbit(e);
+  // poignées du toit (immeuble sélectionné) : comme en 2D, sur le plan horizontal du toit
+  const hs = handles3();
+  if (hs) {
+    const b = S.building, y = projTop(b), w = planeHit(p.x, p.y, y);
+    const hr = hs.find(h => h.kind === 'rot' && Math.hypot(h.x - p.x, h.y - p.y) < 11);
+    const hz = hr || hs.filter(h => h.kind === 'size').sort((a, c) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(c.x - p.x, c.y - p.y)).find(h => Math.hypot(h.x - p.x, h.y - p.y) < 10);
+    if (hz && w) {
+      if (hz.kind === 'rot') drag3 = { type: 'rot3', y, a0: b.a, t0: Math.atan2(w.y - b.cy, w.x - b.cx) };
+      else drag3 = { type: 'size3', y, hx: hz.hx, hy: hz.hy, F: localToWorld(b, -hz.hx * b.w / 2, -hz.hy * b.l / 2) };
+      return;
+    }
+  }
   const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
-  if (hit && hit.kind === 'proj' && g) { selectBuilding(hit.bi); drag3 = { type: 'move', g0: g, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; return; }
+  if (hit && hit.kind === 'proj') {
+    selectBuilding(hit.bi); S.edit3d = true;
+    const y = projTop(S.building), w = planeHit(p.x, p.y, y);
+    if (w) { drag3 = { type: 'move3', y, w0: w, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; }
+    S.dirty = true; return;
+  }
+  S.edit3d = false; S.dirty = true;
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
-  if (!drag3) { glcv.style.cursor = dialHit(ev3(e)) ? 'pointer' : 'default'; return; }
+  if (!drag3) {
+    const q = ev3(e), hs = handles3();
+    const h = hs && hs.find(h => Math.hypot(h.x - q.x, h.y - q.y) < 10);
+    glcv.style.cursor = dialHit(q) ? 'pointer' : h ? (h.kind === 'rot' ? 'grab' : 'crosshair') : 'default'; return;
+  }
   const p = ev3(e);
   if (drag3.type === 'dial') return dialMove(drag3, p);
   if (drag3.type === 'orbit') {
@@ -2625,6 +2700,21 @@ glcv.addEventListener('pointermove', e => {
     drag3.moved = true;
     G.cam.yaw = mod(G.cam.yaw + dx * 0.006 + Math.PI, 2 * Math.PI) - Math.PI;
     G.cam.pitch = clamp(G.cam.pitch - dy * 0.006, 0, 80 * D2R);
+  } else if (drag3.type === 'move3' || drag3.type === 'rot3' || drag3.type === 'size3') {
+    const w = planeHit(p.x, p.y, drag3.y), b = S.building; if (!w || !b) return;
+    if (drag3.type === 'move3') { b.cx = drag3.cx + w.x - drag3.w0.x; b.cy = drag3.cy + w.y - drag3.w0.y; }
+    else if (drag3.type === 'rot3') {
+      let a = drag3.a0 + Math.atan2(w.y - b.cy, w.x - b.cx) - drag3.t0;
+      if (e.shiftKey) a = Math.round(a / (15 * D2R)) * 15 * D2R;
+      b.a = Math.atan2(Math.sin(a), Math.cos(a));
+    } else {
+      const { hx, hy, F } = drag3, c = Math.cos(b.a), sn = Math.sin(b.a), dx = w.x - F.x, dy = w.y - F.y, lx = dx * c + dy * sn, ly = -dx * sn + dy * c;
+      if (hx) b.w = Math.max(2, lx * hx);
+      if (hy) b.l = Math.max(2, ly * hy);
+      const ox = hx ? hx * b.w / 2 : 0, oy = hy ? hy * b.l / 2 : 0;
+      b.cx = F.x + ox * c - oy * sn; b.cy = F.y + ox * sn + oy * c;
+    }
+    syncUI();
   } else {
     const g = ground3(p.x, p.y); if (!g) return;
     if (drag3.type === 'pan') { G.cam.tx += drag3.g0[0] - g[0]; G.cam.tz += drag3.g0[2] - g[2]; }
@@ -2634,11 +2724,12 @@ glcv.addEventListener('pointermove', e => {
 });
 glcv.addEventListener('pointerup', e => {
   if (drag3 && drag3.type === 'dial') { dialUp(drag3); drag3 = null; return; }
-  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e), hit = pick3(p.x, p.y); if (hit && hit.kind === 'proj') selectBuilding(hit.bi); heightPopupFor(hit, e.clientX, e.clientY); }
+  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e), hit = pick3(p.x, p.y); if (hit && hit.kind === 'proj') { selectBuilding(hit.bi); S.edit3d = true; } heightPopupFor(hit, e.clientX, e.clientY); }
   drag3 = null; glcv.style.cursor = 'default'; changed();
 });
 glcv.addEventListener('wheel', e => {
   e.preventDefault();
+  if (dialHit(ev3(e)) === 'sundial') { if (Math.abs(normWheel(e)) >= 4) dialWheel(normWheel(e) < 0 ? 1 : -1); return; }
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
   const nd = clamp(G.cam.dist * f, 5, 1e6), k = nd / G.cam.dist;
   if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
