@@ -45,12 +45,13 @@ input[type=range]{width:100%}
 .hint{color:var(--muted);font-size:11.5px}
 body.noaide .aide{display:none!important}
 #btnPlay{min-width:84px}
-#clockBox{position:absolute;z-index:4;background:rgba(255,255,255,0.95);border:1px solid #9aa7bd;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:6px 6px;text-align:center;width:186px}
+#clockBox{position:absolute;z-index:4;background:rgba(255,255,255,0.95);border:1px solid #9aa7bd;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:6px 6px;text-align:center;width:124px}
 #cbDate{font-size:17px;font-weight:600;color:#334}
 #cbTime{font-size:26px;font-weight:700;color:#223;line-height:1.1;font-variant-numeric:tabular-nums}
 #clockBox button,#clockBox select{padding:2px 5px;font-size:12px}
-#clockBox #btnPlay{min-width:76px}
-#clockBox select{width:84px}
+#clockBox #btnPlay{min-width:0}
+#clockBox .row{flex-direction:column;align-items:stretch}
+#clockBox .row>*{width:100%}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
 .warn{color:var(--warn)}
@@ -256,7 +257,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <div class="row" style="justify-content:center;gap:4px;margin:6px 0 0">
         <button id="btnPlay" title="Animer la journée (Espace)">▶ Animer</button>
         <select id="playSpeed" title="Vitesse d'animation">
-        <option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
+        <option value="15">très lent</option><option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
         </select>
         <button id="btnNow">Maintenant</button>
     </div>
@@ -625,7 +626,7 @@ function setImage(canvas, dataURL, name, keep, site) {
   S.clean = cloneCanvas(canvas);
   S.origRect = null; S.origStyle = null;
   if (site) return setSiteImage(canvas, site, keep);
-  S.site = null; S.terrain = null; S.veg = null; S.layers = null;
+  S.site = null; S.terrain = null; S.veg = null; S.layers = null; S.ruler = null;
   const an = analyzeImage(canvas);
   if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = longSide(an.blue.rect); S.origStyle = an.blue.style; }
   NB = detectNeighbors(canvas);
@@ -650,6 +651,7 @@ function setSiteImage(canvas, site, keep) {
   const W = canvas.width, H = canvas.height;
   NB = nbFromBuildings(site.blds, W, H); S.hVer++;
   S.scale = { p1: { x: 0, y: 0 }, p2: { x: W, y: 0 }, meters: site.L, hidden: true };
+  if (S.site) { S.site.Lx = S.site.Lx || site.L; S.site.Ly = S.site.Ly || site.L * H / W; }
   if (!keep) {
     const ppm = W / site.L;
     S.building = { cx: W / 2, cy: H / 2, w: 20 * ppm, l: 12 * ppm, a: 0 };
@@ -993,6 +995,7 @@ function render(ctx, W, H, v, opt = {}) {
     }
   });
 
+  if (!print) { drawSiteHandles(ctx, q => toS(q, v)); drawRuler(ctx, q => toS(q, v)); }
   // boussole et cadran solaire
   drawDials(ctx, W, H, rotS(northVecs().N, v), sun);
   // échelle graphique
@@ -1064,6 +1067,7 @@ cv.addEventListener('pointerdown', e => {
   const p = evPos(e), w = toW(p);
   const pan = () => { drag = { type: 'pan', sx: p.x, sy: p.y, ox: V.ox, oy: V.oy }; cv.style.cursor = 'grabbing'; };
   if (e.button === 0) { const dk = dialHit(p); if (dk) { drag = dialDown(p, dk); return; } }
+  if (e.button === 0 && S.ruler) { if (S.ruler.live) { S.ruler.b = w; S.ruler.live = false; S.dirty = true; return; } S.ruler = null; S.dirty = true; }
   // clic droit : menu si on ne bouge pas ; glisser = passage en 3D (Maj + clic droit : déplacer la vue)
   if (e.button === 2 && !e.shiftKey) { drag = { type: 'r2', sx: p.x, sy: p.y, pid: e.pointerId }; return; }
   if (e.button === 1 || e.button === 2) { pan(); drag.btn = e.button; return; }
@@ -1091,7 +1095,7 @@ cv.addEventListener('pointerdown', e => {
     return pan();
   }
   const h = hitTest(p);
-  if (!h) { if (S.editB) { S.editB = false; S.dirty = true; } return pan(); }
+  if (!h) { const sh = siteHit(p); if (sh) { drag = siteDragStart(sh); return; } if (S.editB) { S.editB = false; S.dirty = true; } return pan(); }
   if (h.kind === 'move' && h.bi !== S.sel) { S.editB = false; selectBuilding(h.bi); }
   const b = S.building;
   if (h.kind === 'move') drag = { type: 'move', sx: w.x, sy: w.y, cx: b.cx, cy: b.cy };
@@ -1101,9 +1105,11 @@ cv.addEventListener('pointerdown', e => {
 cv.addEventListener('pointermove', e => {
   const p = evPos(e), w = toW(p);
   if (S.temp && !drag && S.mode === 'scale') { S.temp.p2 = w; S.dirty = true; }
-  if (!drag) { if (S.clean && dialHit(p)) { cv.style.cursor = 'pointer'; return; } if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
+  if (!drag && S.ruler && S.ruler.live) { S.ruler.b = w; S.dirty = true; }
+  if (!drag) { if (S.clean && dialHit(p)) { cv.style.cursor = 'pointer'; return; } if (S.clean && siteHit(p)) { cv.style.cursor = 'move'; return; } if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
   const b = S.building;
   if (drag.type === 'dial') return dialMove(drag, p);
+  if (drag.type === 'site') return siteDragMove(drag, p);
   if (drag.type === 'r2') {
     if (Math.hypot(p.x - drag.sx, p.y - drag.sy) > 6 && enter3D(true)) {
       closePop(); cv.releasePointerCapture(drag.pid); glcv.setPointerCapture(drag.pid);
@@ -1134,6 +1140,7 @@ cv.addEventListener('pointermove', e => {
 cv.addEventListener('pointerup', e => {
   if (!drag) return;
   if (drag.type === 'dial') { dialUp(drag); drag = null; return; }
+  if (drag.type === 'site') { const d = drag; drag = null; siteDragEnd(d); return; }
   if (drag.type === 'r2' || (drag.type === 'pan' && drag.btn === 2)) {   // clic droit sans glisser : menu local
     const p = evPos(e);
     if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 6) context2D(p, e.clientX, e.clientY);
@@ -1154,7 +1161,7 @@ function context2D(p, cx, cy) {
   const w = toW(p), h = S.building && hitTest(p), c = nbAt(w.x, w.y);
   if (h && h.kind === 'move') { selectBuilding(h.bi); return menuProj(S.building, 'roof', cx, cy); }
   if (c) return menuNb(c, cx, cy);
-  menuBg(cx, cy);
+  menuBg(cx, cy, w);
 }
 cv.addEventListener('dblclick', e => {   // double-clic : poignées de l'immeuble
   const h = hitTest(evPos(e)); if (h && h.kind === 'move') { selectBuilding(h.bi); S.editB = true; S.dirty = true; }
@@ -1506,14 +1513,14 @@ async function loadProject(p) {
   S.layers = null;
   if (p.site && p.site.layers) {   // couches du site : recomposées selon les réglages enregistrés
     const L = {};
-    for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = cc.height = im.width; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
+    for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = im.width; cc.height = im.height; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
   for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
-  if (S.layers) c = composeLayers(S.layers, (S.layers.plan || S.layers.ortho || S.layers.cad).width);
+  if (S.layers) c = composeLayers(S.layers);
   setImage(c, S.layers ? null : p.image, p.fileName, true, p.site ? siteFromSave(p.site) : null);
   const vw = p.view;
   if (vw) {
@@ -1808,8 +1815,9 @@ function menuProj(b, part, cx, cy) {
     m.button('Supprimer', () => { closePop(); $('btnDelB').onclick(); });
   });
 }
-function menuBg(cx, cy) {
+function menuBg(cx, cy, P) {
   openMenu(cx, cy, 'Fond', m => {
+    if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
     m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
     m.range('Contraste', () => S.contrast, v => S.contrast = v, 40, 200, 5, v => v + ' %');
     m.range('Opacité ombre', () => S.opacity, v => S.opacity = v, 0.1, 0.9, 0.05, v => Math.round(v * 100) + ' %');
@@ -1882,48 +1890,47 @@ async function fetchImage(url, what) {
   try { return await loadImg(u); } finally { URL.revokeObjectURL(u); }
 }
 /** Les trois couches (plan IGN, photo, cadastre) sont téléchargées une fois ; le fond affiché se recompose aussitôt. */
-async function fetchLayers(bb, px) {
-  const get = (layer, fmt, transp, what) => fetchImage(wmsUrl(layer, bb, px, px, fmt, transp), what).catch(e => { console.warn(e); return e; });
+async function fetchLayers(bb, pw, ph) {
+  const get = (layer, fmt, transp, what) => fetchImage(wmsUrl(layer, bb, pw, ph, fmt, transp), what).catch(e => { console.warn(e); return e; });
   const [plan, ortho, cad] = await Promise.all([get(SITE_BG.plan.base, 'image/png', false, 'Plan IGN'), get(SITE_BG.ortho.base, 'image/jpeg', false, 'Photo aérienne'), get(CAD_LAYER, 'image/png', true, 'Cadastre')]);
   const L = {}, errs = [];
-  for (const [k, v] of [['plan', plan], ['ortho', ortho], ['cad', cad]]) { if (v instanceof Error) errs.push(v.message); else { const c = document.createElement('canvas'); c.width = c.height = px; c.getContext('2d').drawImage(v, 0, 0, px, px); L[k] = c; } }
+  for (const [k, v] of [['plan', plan], ['ortho', ortho], ['cad', cad]]) { if (v instanceof Error) errs.push(v.message); else { const c = document.createElement('canvas'); c.width = pw; c.height = ph; c.getContext('2d').drawImage(v, 0, 0, pw, ph); L[k] = c; } }
   if (!L.plan && !L.ortho && !L.cad) throw new Error(errs.join(' ; '));
   return { L, errs };
 }
-function composeLayers(L, px) {
-  const c = document.createElement('canvas'); c.width = c.height = px;
-  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, px, px);
+function composeLayers(L) {
+  const any = L.plan || L.ortho || L.cad, c = document.createElement('canvas'); c.width = any.width; c.height = any.height;
+  const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   const base = S.bgMode === 'ortho' ? (L.ortho || L.plan) : S.bgMode === 'plan' ? (L.plan || L.ortho) : null;
   if (base) x.drawImage(base, 0, 0);
   if (S.showCad && L.cad) x.drawImage(L.cad, 0, 0);
   return c;
 }
 function composeSite() {
-  const any = S.layers.plan || S.layers.ortho || S.layers.cad, c = composeLayers(S.layers, any.width);
+  const c = composeLayers(S.layers);
   S.orig = c; S.clean = c; S.origDataURL = null; S.dirty = true;
 }
-async function fetchGrid(layer, bb, n, what) {
-  const buf = await (await fetchRetry(wmsUrl(layer, bb, n, n, 'image/x-bil;bits=32'), null, what || 'Relief')).arrayBuffer();
-  if (buf.byteLength !== n * n * 4) throw new Error('Relief : réponse inattendue');
-  const dv = new DataView(buf), z = new Float32Array(n * n);
-  for (let i = 0; i < n * n; i++) z[i] = dv.getFloat32(i * 4, true);
+async function fetchGrid(layer, bb, nx, ny, what) {
+  const buf = await (await fetchRetry(wmsUrl(layer, bb, nx, ny, 'image/x-bil;bits=32'), null, what || 'Relief')).arrayBuffer();
+  if (buf.byteLength !== nx * ny * 4) throw new Error('Relief : réponse inattendue');
+  const dv = new DataView(buf), z = new Float32Array(nx * ny);
+  for (let i = 0; i < nx * ny; i++) z[i] = dv.getFloat32(i * 4, true);
   return z;
 }
 const zOk = v => isFinite(v) && v > -500 && v < 9000;
 /** Relief : LiDAR HD (MNT), complété par le RGE ALTI là où le LiDAR manque. */
-async function fetchTerrain(bb, L) {
-  const n = Math.min(500, Math.ceil(L / 0.5));
+async function fetchTerrain(bb, nx, ny, cell) {
   let z = null, src = 'LiDAR HD';
-  try { z = await fetchGrid('IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, n); } catch (e) { console.warn(e); }
-  let bad = z ? z.reduce((t, v) => t + !zOk(v), 0) : n * n;
+  try { z = await fetchGrid('IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nx, ny); } catch (e) { console.warn(e); }
+  let bad = z ? z.reduce((t, v) => t + !zOk(v), 0) : nx * ny;
   if (bad) {
-    const z2 = await fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES', bb, n);
+    const z2 = await fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES', bb, nx, ny);
     if (!z) { z = z2; src = 'RGE ALTI'; } else { for (let i = 0; i < z.length; i++) if (!zOk(z[i])) z[i] = z2[i]; src = 'LiDAR HD + RGE ALTI'; }
     bad = z.reduce((t, v) => t + !zOk(v), 0);
   }
   if (bad > z.length * 0.5) return null;
   if (bad) { let last = 0; for (let i = 0; i < z.length; i++) if (zOk(z[i])) last = z[i]; else z[i] = last; }
-  return { n, cell: L / n, z, src };
+  return { nx, ny, cell, z, src };
 }
 async function fetchBuildings(bb) {
   const out = []; let start = 0;
@@ -1955,9 +1962,30 @@ function rasterize(ids, W, H, rings, id) {
 }
 const ringArea = r => { let a = 0; r.forEach((p, i) => { const q = r[(i + 1) % r.length]; a += p.x * q.y - q.x * p.y; }); return a / 2; };
 /** Construit NB à partir des bâtiments du site : [{rings (coord. image), h, base, bd, nature}]. */
+/** Découpe un contour par le rectangle du plan (Sutherland-Hodgman). */
+function clipRing(r, W, H) {
+  let out = r;
+  for (const [inside, cut] of [
+    [p => p.x >= 0, (a, b) => ({ x: 0, y: a.y + (b.y - a.y) * (0 - a.x) / (b.x - a.x) })],
+    [p => p.x <= W, (a, b) => ({ x: W, y: a.y + (b.y - a.y) * (W - a.x) / (b.x - a.x) })],
+    [p => p.y >= 0, (a, b) => ({ x: a.x + (b.x - a.x) * (0 - a.y) / (b.y - a.y), y: 0 })],
+    [p => p.y <= H, (a, b) => ({ x: a.x + (b.x - a.x) * (H - a.y) / (b.y - a.y), y: H })]]) {
+    const inp = out; out = [];
+    for (let i = 0; i < inp.length; i++) {
+      const a = inp[(i + inp.length - 1) % inp.length], b = inp[i];
+      if (inside(b)) { if (!inside(a)) out.push(cut(a, b)); out.push(b); } else if (inside(a)) out.push(cut(a, b));
+    }
+    if (!out.length) break;
+  }
+  return out;
+}
 function nbFromBuildings(blds, W, H) {
   const ids = new Int32Array(W * H), list = [];
-  for (const b of blds) {
+  for (const b0 of blds) {
+    // seules les parties sur le plan sont gardées
+    const cl = b0.rings.map(r => clipRing(r, W, H)).filter(r => r.length >= 3 && Math.abs(ringArea(r)) > 1);
+    if (!cl.length || Math.abs(ringArea(b0.rings[0])) > 1 && !(clipRing(b0.rings[0], W, H).length >= 3)) continue;
+    const b = { ...b0, rings: cl };
     // orientation : contour extérieur « négatif », trous « positifs » (normales des murs vers l'extérieur)
     const rings = b.rings.map((r, k) => (k === 0) === (ringArea(r) > 0) ? r.slice().reverse() : r);
     const c = { n: 0, loops: rings, bd: b.bd, base: b.base, nature: b.nature, bdt: b.bdt, roof: b.roof, h0: b.h0 !== undefined ? b.h0 : b.h };
@@ -1970,10 +1998,10 @@ function nbFromBuildings(blds, W, H) {
 /** Relief : altitude (m, relative à z0) en un point du plan (bilinéaire). */
 function terrainAt(x, y) {
   const T = S.terrain; if (!T) return 0;
-  const k = 1 / (T.cell * pxPerM()), gx = clamp(x * k - 0.5, 0, T.n - 1), gy = clamp(y * k - 0.5, 0, T.n - 1);
-  const i = Math.min(T.n - 2, Math.floor(gx)), j = Math.min(T.n - 2, Math.floor(gy)), u = gx - i, v = gy - j, z = T.z;
-  if (T.n < 2) return z[0] - T.z0;
-  return (z[j * T.n + i] * (1 - u) * (1 - v) + z[j * T.n + i + 1] * u * (1 - v) + z[(j + 1) * T.n + i] * (1 - u) * v + z[(j + 1) * T.n + i + 1] * u * v) - T.z0;
+  const nx = T.nx, ny = T.ny; if (nx < 2 || ny < 2) return T.z[0] - T.z0;
+  const k = 1 / (T.cell * pxPerM()), gx = clamp(x * k - 0.5, 0, nx - 1), gy = clamp(y * k - 0.5, 0, ny - 1);
+  const i = Math.min(nx - 2, Math.floor(gx)), j = Math.min(ny - 2, Math.floor(gy)), u = gx - i, v = gy - j, z = T.z;
+  return (z[j * nx + i] * (1 - u) * (1 - v) + z[j * nx + i + 1] * u * (1 - v) + z[(j + 1) * nx + i] * (1 - u) * v + z[(j + 1) * nx + i + 1] * u * v) - T.z0;
 }
 function terrainRange() {
   const T = S.terrain; if (!T) return [0, 0];
@@ -1982,10 +2010,10 @@ function terrainRange() {
 }
 /** Toits en pente : profil (0 = gouttière, 1 = faîtage) tiré du MNS LiDAR à l'intérieur de chaque emprise. */
 function computeRoofs(mns, T) {
-  const n = T.n, cpx = T.cell * pxPerM(); let cnt = 0;
+  const n = T.nx, cpx = T.cell * pxPerM(); let cnt = 0;
   for (const c of NB.list) {
     delete c.roof;
-    const i0 = Math.max(0, Math.floor(c.x0 / cpx)), i1 = Math.min(n - 1, Math.floor(c.x1 / cpx)), j0 = Math.max(0, Math.floor(c.y0 / cpx)), j1 = Math.min(n - 1, Math.floor(c.y1 / cpx));
+    const i0 = Math.max(0, Math.floor(c.x0 / cpx)), i1 = Math.min(T.nx - 1, Math.floor(c.x1 / cpx)), j0 = Math.max(0, Math.floor(c.y0 / cpx)), j1 = Math.min(T.ny - 1, Math.floor(c.y1 / cpx));
     const w = i1 - i0 + 1, h = j1 - j0 + 1; if (w < 2 || h < 2) continue;
     const P = new Float32Array(w * h).fill(NaN), vals = [];
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -2032,8 +2060,8 @@ function roofProfile(c, x, y) {
 function roofZ(c, x, y) { const hm = nbHeight(c), e = c.roof ? c.roof.e : 1; return nbBase(c) + hm * (e + (1 - e) * roofProfile(c, x, y)); }
 /** Végétation : hauteur (m) = MNS − MNT, hors bâtiments (marge 1,5 m), sans objets isolés (lampadaires, véhicules). */
 function vegFromMNS(mns, T) {
-  const n = T.n, cpx = T.cell * pxPerM(), off = 1.5 * pxPerM(), raw = new Float32Array(n * n);
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+  const n = T.nx, ny = T.ny, cpx = T.cell * pxPerM(), off = 1.5 * pxPerM(), raw = new Float32Array(n * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < n; i++) {
     const k = j * n + i, v = mns[k] - T.z[k];
     if (!zOk(mns[k]) || !(v > 2.5)) continue;
     const x = (i + 0.5) * cpx, y = (j + 0.5) * cpx;
@@ -2041,27 +2069,27 @@ function vegFromMNS(mns, T) {
     for (const [dx, dy] of [[0, 0], [off, 0], [-off, 0], [0, off], [0, -off], [off, off], [-off, -off], [off, -off], [-off, off]]) if (nbAt(x + dx, y + dy)) { bld = true; break; }
     if (!bld) raw[k] = Math.min(v, 45);
   }
-  const h = new Float32Array(n * n); let cnt = 0;
-  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+  const h = new Float32Array(n * ny); let cnt = 0;
+  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < n - 1; i++) {
     const k = j * n + i; if (!raw[k]) continue;
     let nb = 0; for (const d of [-1, 1, -n, n, -n - 1, -n + 1, n - 1, n + 1]) if (raw[k + d]) nb++;
     if (nb >= 3) { h[k] = raw[k]; cnt++; }
   }
   let max = 0; for (const v of h) if (v > max) max = v;
   if (!cnt) return null;
-  return { ...segmentTrees(h, n, T), n, cell: T.cell, max, area: cnt * T.cell * T.cell };
+  return { ...segmentTrees(h, n, ny, T), nx: n, ny, cell: T.cell, max, area: cnt * T.cell * T.cell };
 }
 /** Découpe la canopée en houppiers (ligne de partage des eaux depuis les sommets) ;
  *  arbres = sommet ≥ 5 m et houppier ≥ 3 m², le reste (haies, arbustes) reste en surface continue. */
-function segmentTrees(h, n, T) {
-  const cell = T.cell, sm = new Float32Array(n * n), idx = [];
-  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) {
+function segmentTrees(h, n, ny, T) {
+  const cell = T.cell, sm = new Float32Array(n * ny), idx = [];
+  for (let j = 1; j < ny - 1; j++) for (let i = 1; i < n - 1; i++) {
     const k = j * n + i; if (!h[k]) continue;
     let t = 0, q = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const v = h[k + b * n + a]; if (v) { t += v; q++; } }
     sm[k] = t / q; idx.push(k);
   }
   idx.sort((a, b) => sm[b] - sm[a]);
-  const lab = new Int32Array(n * n), seg = [null];
+  const lab = new Int32Array(n * ny), seg = [null];
   for (const k of idx) {
     let best = 0, bh = -1;
     for (const d of [-1, 1, -n, n, -n - 1, -n + 1, n - 1, n + 1]) { const l = lab[k + d]; if (l && sm[k + d] > bh) { bh = sm[k + d]; best = l; } }
@@ -2075,7 +2103,7 @@ function segmentTrees(h, n, T) {
     let best = 0, bn = 0; for (const d of [-1, 1, -n, n]) { const l = lab[k + d]; if (l && l !== lab[k] && seg[l].n > bn) { bn = seg[l].n; best = l; } }
     if (best) { const s0 = seg[lab[k]]; s0.n--; s0.sx -= k % n; s0.sy -= Math.floor(k / n); const s1 = seg[best]; s1.n++; s1.sx += k % n; s1.sy += Math.floor(k / n); s1.peak = Math.max(s1.peak, h[k]); lab[k] = best; }
   }
-  const trees = [], hedge = new Float32Array(n * n); let hedgeN = 0;
+  const trees = [], hedge = new Float32Array(n * ny); let hedgeN = 0;
   const isTree = seg.map(sg => sg && sg.n * cell * cell >= 3 && sg.peak >= 5);
   seg.forEach((sg, l) => {
     if (!isTree[l]) return;
@@ -2088,7 +2116,7 @@ function segmentTrees(h, n, T) {
 /** Convergence des méridiens en Lambert-93 : angle du nord géographique par rapport au haut du plan. */
 const l93North = lon => 0.7256077650 * (3 - lon);
 async function loadSite() {
-  const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000), bg = S.bgMode;
+  const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000);
   if (!q) { $('addr').focus(); return; }
   const btn = $('btnSite'); btn.disabled = true;
   try {
@@ -2097,16 +2125,33 @@ async function loadSite() {
     if (!res.length) throw new Error('adresse introuvable');
     const g = res[0];
     $('addrFound').textContent = 'Adresse trouvée : ' + g.label;
-    const px = Math.round(L * Math.min(8, 3000 / L)), ppm = px / L;
-    const bb = [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2];
+    await loadSiteRect(g, [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2]);
+  } catch (e) {
+    console.error(e); status('Chargement du site impossible : ' + e.message, true); alert('Chargement du site impossible.\n' + e.message);
+  } finally { btn.disabled = false; }
+}
+/** Charge le rectangle bb (Lambert-93, m) : g = adresse { label, lon, lat, x, y }. */
+async function loadSiteRect(g, bb, keepView) {
+  const bg = S.bgMode;
+  const vKeep = keepView ? { cam: { ...G.cam }, v: toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot, x0: S.site.x0, y1: S.site.y1, ppm: pxPerM() } : null;
+  {
+    // côtés multiples de la maille du relief (≤ 500 mailles), centre conservé
+    let Lx = clamp(bb[2] - bb[0], 30, 1000), Ly = clamp(bb[3] - bb[1], 30, 1000);
+    const cell = Math.max(0.5, Math.max(Lx, Ly) / 500), nx = Math.round(Lx / cell), ny = Math.round(Ly / cell), mx = (bb[0] + bb[2]) / 2, my = (bb[1] + bb[3]) / 2;
+    Lx = nx * cell; Ly = ny * cell; bb = [mx - Lx / 2, my - Ly / 2, mx + Lx / 2, my + Ly / 2];
+    var ppm = Math.min(8, 3000 / Math.max(Lx, Ly)), pw = Math.round(Lx * ppm), ph = Math.round(Ly * ppm); ppm = pw / Lx;
+    var L = Lx, LY = Ly, NX = nx, NY = ny, CELL = cell;
+  }
+  {
     status('Téléchargement du fond de plan, des bâtiments et du relief (IGN)…', true);
-    const nT = Math.min(500, Math.ceil(L / 0.5));
-    const [lay, feats, terr, mns] = await Promise.all([fetchLayers(bb, px), fetchBuildings(bb), fetchTerrain(bb, L).catch(e => { console.warn(e); return null; }),
-      fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nT, 'Végétation').catch(e => { console.warn(e); return null; })]);
-    const base = composeLayers(lay.L, px);
+    const [lay, feats, terr, mns] = await Promise.all([fetchLayers(bb, pw, ph), fetchBuildings(bb), fetchTerrain(bb, NX, NY, CELL).catch(e => { console.warn(e); return null; }),
+      fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, NX, NY, 'Végétation').catch(e => { console.warn(e); return null; })]);
+    const base = composeLayers(lay.L);
     const toImg = ([X, Y]) => ({ x: (X - bb[0]) * ppm, y: (bb[3] - Y) * ppm });
     let z0 = 0;
-    if (terr) { const c = Math.floor(terr.n / 2); z0 = terr.z[c * terr.n + c]; }
+    if (terr) {   // référence d'altitude : le terrain à l'adresse
+      const i = clamp(Math.floor((g.x - bb[0]) / CELL), 0, NX - 1), j = clamp(Math.floor((bb[3] - g.y) / CELL), 0, NY - 1); z0 = terr.z[j * NX + i];
+    }
     const blds = [];
     for (const f of feats) {
       const pr = f.properties || {}, geom = f.geometry; if (!geom) continue;
@@ -2126,27 +2171,33 @@ async function loadSite() {
     }
     const prevSite = S.site, prevPpm = pxPerM();
     const dataURL = null;   // l'image est produite à l'enregistrement
-    S.site = { label: g.label, L, bg, x0: bb[0], y1: bb[3], lon: g.lon, lat: g.lat, z0, terrSrc: terr ? terr.src : null };
-    S.terrain = terr ? { n: terr.n, cell: terr.cell, z: terr.z, z0, src: terr.src } : null;
+    S.site = { label: g.label, Lx: L, Ly: LY, bg, x0: bb[0], y1: bb[3], ax: g.x, ay: g.y, lon: g.lon, lat: g.lat, z0, terrSrc: terr ? terr.src : null };
+    S.terrain = terr ? { nx: terr.nx, ny: terr.ny, cell: terr.cell, z: terr.z, z0, src: terr.src } : null;
     S.lat = Math.round(g.lat * 1e4) / 1e4; S.lon = Math.round(g.lon * 1e4) / 1e4; S.tzStd = 1; S.dstAuto = true;
     S.north = Math.round(l93North(g.lon) * 100) / 100;
     // immeubles projetés conservés : même position géographique si possible, sinon même disposition au centre
     const oldB = S.buildings.map(b => ({ ...b })), oldSite = prevSite, oldPpm = prevPpm;
     S.layers = lay.L;
     setImage(base, dataURL, g.label.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 60) || 'site', false, { blds, L });
-    if (enter3D()) { G.cam.pitch = 50 * D2R; G.cam.yaw = 0; fit3d(); G.cam.dist *= 0.8; changed(); }
+    const wasSite = !!oldSite;
+    if (!keepView && enter3D()) { G.cam.pitch = 50 * D2R; G.cam.yaw = 0; fit3d(); G.cam.dist *= 0.8; changed(); }
     if (oldB.length) {
-      const k = ppm / oldPpm, W = base.width;
+      const k = ppm / oldPpm, W = base.width, Hh = base.height;
       let nb = oldB.map(b => {
         let cx = b.cx * k, cy = b.cy * k;
         if (oldSite) { const X = oldSite.x0 + b.cx / oldPpm, Y = oldSite.y1 - b.cy / oldPpm; cx = (X - bb[0]) * ppm; cy = (bb[3] - Y) * ppm; }
         return { ...b, cx, cy, w: b.w * k, l: b.l * k };
       });
-      if (!oldSite || nb.every(b => b.cx < 0 || b.cy < 0 || b.cx > W || b.cy > W)) {   // ailleurs : regroupés au centre
+      if (!oldSite || nb.every(b => b.cx < 0 || b.cy < 0 || b.cx > W || b.cy > Hh)) {   // ailleurs : regroupés au centre
         const mx = nb.reduce((t, b) => t + b.cx, 0) / nb.length, my = nb.reduce((t, b) => t + b.cy, 0) / nb.length;
-        nb = nb.map(b => ({ ...b, cx: b.cx - mx + W / 2, cy: b.cy - my + W / 2 }));
+        nb = nb.map(b => ({ ...b, cx: b.cx - mx + W / 2, cy: b.cy - my + Hh / 2 }));
       }
       const sel = S.sel; S.buildings = nb.map(normB); S.sel = clamp(sel, 0, nb.length - 1); S.dH = S.height;
+    }
+    if (vKeep) {   // même cadrage qu'avant l'agrandissement
+      const dx = (vKeep.x0 - bb[0]) * ppm, dy = (bb[3] - vKeep.y1) * ppm, k = ppm / vKeep.ppm;
+      setView(vKeep.v.x * k + dx, vKeep.v.y * k + dy, vKeep.s / k, vKeep.rot);
+      Object.assign(G.cam, vKeep.cam, { tx: vKeep.cam.tx * k + dx, tz: vKeep.cam.tz * k + dy, dist: vKeep.cam.dist * k });
     }
     const lidar = mns && S.terrain && /LiDAR/.test(S.terrain.src);
     const nRoof = lidar ? computeRoofs(mns, S.terrain) : 0; G.nbKey = '';
@@ -2155,9 +2206,7 @@ async function loadSite() {
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
       (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche manquante : ' + lay.errs.join(' ; ') : '') +
       '. Placez votre immeuble (vert) et ajustez sa taille.', true);
-  } catch (e) {
-    console.error(e); status('Chargement du site impossible : ' + e.message, true); alert('Chargement du site impossible.\n' + e.message);
-  } finally { btn.disabled = false; }
+  }
 }
 $('btnSite').onclick = loadSite;
 const canvasURL = (c, jpg) => c.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.88);
@@ -2172,25 +2221,26 @@ function siteForSave() {
   return {
     ...S.site,
     layers: { plan: Ls.plan ? canvasURL(Ls.plan) : null, ortho: Ls.ortho ? canvasURL(Ls.ortho, true) : null, cad: Ls.cad ? canvasURL(Ls.cad) : null },
-    terrain: S.terrain ? { n: S.terrain.n, cell: S.terrain.cell, z0: S.terrain.z0, src: S.terrain.src, z: f32ToB64(S.terrain.z) } : null,
-    veg: S.veg ? { n: S.veg.n, cell: S.veg.cell, area: S.veg.area, max: S.veg.max, hedgeArea: S.veg.hedgeArea, trees: S.veg.trees, h: f32ToB64(S.veg.h) } : null,
+    terrain: S.terrain ? { nx: S.terrain.nx, ny: S.terrain.ny, cell: S.terrain.cell, z0: S.terrain.z0, src: S.terrain.src, z: f32ToB64(S.terrain.z) } : null,
+    veg: S.veg ? { nx: S.veg.nx, ny: S.veg.ny, cell: S.veg.cell, area: S.veg.area, max: S.veg.max, hedgeArea: S.veg.hedgeArea, trees: S.veg.trees, h: f32ToB64(S.veg.h) } : null,
     blds: NB.list.map(c => ({ rings: c.loops.map(r => r.map(p => [r1(p.x), r1(p.y)])), h: c.h, bd: c.bd, base: c.base, nature: c.nature, bdt: c.bdt, h0: c.h0,
       roof: c.roof ? { i0: c.roof.i0, j0: c.roof.j0, w: c.roof.w, h: c.roof.h, cell: c.roof.cell, e: c.roof.e, v: btoa(Array.from(c.roof.v, x => String.fromCharCode(Math.round(x * 255))).join('')) } : undefined }))
   };
 }
 function siteFromSave(st) {
-  S.site = { label: st.label, L: st.L, bg: st.bg, x0: st.x0, y1: st.y1, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc };
-  S.terrain = st.terrain ? { n: st.terrain.n, cell: st.terrain.cell, z0: st.terrain.z0, src: st.terrain.src, z: b64ToF32(st.terrain.z) } : null;
-  S.veg = st.veg ? { n: st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, hedgeArea: st.veg.hedgeArea || 0, trees: st.veg.trees || [], h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
+  const L = st.Lx || st.L, Ly = st.Ly || st.L;
+  S.site = { label: st.label, Lx: L, Ly, bg: st.bg, x0: st.x0, y1: st.y1, ax: st.ax, ay: st.ay, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc };
+  S.terrain = st.terrain ? { nx: st.terrain.nx || st.terrain.n, ny: st.terrain.ny || st.terrain.n, cell: st.terrain.cell, z0: st.terrain.z0, src: st.terrain.src, z: b64ToF32(st.terrain.z) } : null;
+  S.veg = st.veg ? { nx: st.veg.nx || st.veg.n, ny: st.veg.ny || st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, hedgeArea: st.veg.hedgeArea || 0, trees: st.veg.trees || [], h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
   const roofIn = R => { if (!R) return undefined; const s = atob(R.v), v = new Float32Array(s.length); for (let i = 0; i < s.length; i++) v[i] = s.charCodeAt(i) / 255; return { ...R, v }; };
-  return { L: st.L, blds: st.blds.map(b => ({ ...b, roof: roofIn(b.roof), rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
+  return { L, blds: st.blds.map(b => ({ ...b, roof: roofIn(b.roof), rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
 }
 
 
 /* ------------------------------------------- Boussole et cadran solaire */
 function dialLayout(W = CW, H = CH) {
   const R = 58, cx = W - R - 18, cy = R + 18, sy = cy + 2 * R + 40, R3 = 58, ky = sy + R + 22 + R3, by = ky + R3 + 14;
-  return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, by, rect: { x: W - 2 * R - 140, y: 0, w: 2 * R + 140, h: by + 100 } };
+  return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, by, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: by + 150 } };
 }
 const CAL_STEPS = [['1 jour', 'd1'], ['1 semaine', 'w1'], ['½ mois', 'm05'], ['1 mois', 'm1'], ['½ saison', 's05'], ['1 saison', 's1']];
 /** Angle (rad, depuis le haut, sens horaire) d'un jour sur le calendrier : 1er janvier en haut. */
@@ -2201,8 +2251,13 @@ function calStepBy(dir) {
     case 'w1': S.day += 7 * dir; break;
     case 'm05': S.day += 15 * dir; break;
     case 'm1': addMonths(dir); break;
-    case 's05': S.day += 46 * dir; break;
-    case 's1': S.day += 91 * dir; break;
+    case 's05': case 's1': {   // de solstice en équinoxe (et mi-saisons)
+      const y = fromDays(S.day).y, L = [];
+      for (let yy = y - 1; yy <= y + 1; yy++) L.push(toDays(yy, 2, 20), toDays(yy, 5, 21), toDays(yy, 8, 22), toDays(yy, 11, 21));
+      if (S.calStep === 's05') for (let i = L.length - 1; i > 0; i--) L.splice(i, 0, Math.round((L[i - 1] + L[i]) / 2));
+      const nx = dir > 0 ? L.find(d => d > S.day) : L.slice().reverse().find(d => d < S.day);
+      if (nx !== undefined) S.day = nx; break;
+    }
     default: S.day += dir;
   }
   changed();
@@ -2359,6 +2414,78 @@ function dialUp(d) {
   if (d.kind === 'sundial') {   // midi solaire
     const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + Math.round(ev.noon); changed();
   } else rotateView(null);
+}
+
+/* ------------------------------------- Agrandir le site (poignées du plan) et règle */
+function siteHandleList() {
+  if (!S.site || !S.clean || S.mode !== 'select') return [];
+  const W = S.clean.width, H = S.clean.height, out = [];
+  for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) { if (!hx && !hy) continue; out.push({ hx, hy, x: (hx + 1) / 2 * W, y: (hy + 1) / 2 * H }); }
+  return out;
+}
+const scr3 = (ci, p, dy = 0) => toScreen3(ci.VP, [p.x, (terrainAt(p.x, p.y) + dy) * pxPerM(), p.y]);
+function siteHit(p) {
+  const ci = S.view3d ? camInfo() : null; let best = null, bd = 10;
+  for (const h of siteHandleList()) { const q = S.view3d ? scr3(ci, h) : toS(h); if (!q) continue; const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; best = h; } }
+  return best;
+}
+function siteDragStart(h) { return { type: 'site', hx: h.hx, hy: h.hy, y3: terrainAt(h.x, h.y) * pxPerM(), r: { x0: 0, y0: 0, x1: S.clean.width, y1: S.clean.height } }; }
+function siteDragMove(d, p) {
+  const w = S.view3d ? planeHit(p.x, p.y, d.y3) : toW(p); if (!w) return;
+  const ppm = pxPerM(), mn = 30 * ppm, mx = 1000 * ppm, r = d.r;
+  if (d.hx < 0) r.x0 = clamp(w.x, r.x1 - mx, r.x1 - mn); if (d.hx > 0) r.x1 = clamp(w.x, r.x0 + mn, r.x0 + mx);
+  if (d.hy < 0) r.y0 = clamp(w.y, r.y1 - mx, r.y1 - mn); if (d.hy > 0) r.y1 = clamp(w.y, r.y0 + mn, r.y0 + mx);
+  S.sitePreview = r; S.dirty = true;
+}
+/** Fin du glisser : le rectangle est rechargé auprès de l'IGN (immeubles, vue et réglages conservés). */
+async function siteDragEnd(d) {
+  const r = d.r, W = S.clean.width, H = S.clean.height, ppm = pxPerM(); S.sitePreview = null; S.dirty = true;
+  if (Math.abs(r.x0) + Math.abs(r.y0) + Math.abs(r.x1 - W) + Math.abs(r.y1 - H) < ppm) return;
+  const st = S.site, bb = [st.x0 + r.x0 / ppm, st.y1 - r.y1 / ppm, st.x0 + r.x1 / ppm, st.y1 - r.y0 / ppm];
+  const g = { label: st.label, lon: st.lon, lat: st.lat, x: st.ax !== undefined ? st.ax : st.x0 + W / ppm / 2, y: st.ay !== undefined ? st.ay : st.y1 - H / ppm / 2 };
+  S.siteBusy = true;
+  try { await loadSiteRect(g, bb, true); }
+  catch (e) { console.error(e); status('Agrandissement impossible : ' + e.message, true); alert('Agrandissement du site impossible.\n' + e.message); }
+  finally { S.siteBusy = false; S.dirty = true; }
+}
+/** Poignées du plan et aperçu du nouveau rectangle ; toScr : point du plan → écran. */
+function drawSiteHandles(ctx, toScr) {
+  const hs = siteHandleList(); if (!hs.length) return;
+  const pr = S.sitePreview;
+  if (pr) {
+    const cs = [[pr.x0, pr.y0], [pr.x1, pr.y0], [pr.x1, pr.y1], [pr.x0, pr.y1]].map(([x, y]) => toScr({ x, y }));
+    if (cs.every(q => q)) {
+      ctx.setLineDash([8, 5]); ctx.lineWidth = 2.5; ctx.strokeStyle = '#fff'; polyPath(ctx, cs); ctx.stroke();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#1d4ed8'; polyPath(ctx, cs); ctx.stroke(); ctx.setLineDash([]);
+      const ppm = pxPerM(), t = fmtNum((pr.x1 - pr.x0) / ppm, 0) + ' × ' + fmtNum((pr.y1 - pr.y0) / ppm, 0) + ' m', mx = (cs[0].x + cs[2].x) / 2, my = (cs[0].y + cs[2].y) / 2;
+      ctx.font = 'bold 13px system-ui, sans-serif'; const w = ctx.measureText(t).width + 14; drawLabel(ctx, { x: mx - w / 2, y: my - 11, w, h: 22 }, t, '#1d4ed8', null);
+    }
+  }
+  if (S.siteBusy) return;
+  ctx.fillStyle = '#fff'; ctx.strokeStyle = '#1d4ed8'; ctx.lineWidth = 1.5;
+  for (const h of hs) { const q = toScr(pr ? { x: h.hx < 0 ? pr.x0 : h.hx > 0 ? pr.x1 : (pr.x0 + pr.x1) / 2, y: h.hy < 0 ? pr.y0 : h.hy > 0 ? pr.y1 : (pr.y0 + pr.y1) / 2 } : h); if (!q) continue; ctx.fillRect(q.x - 5, q.y - 5, 10, 10); ctx.strokeRect(q.x - 5, q.y - 5, 10, 10); }
+}
+// règle : premier point = clic droit ; longueur suivie à la souris ; clic gauche = fixée ; nouveau clic = effacée
+function ground3pt(sx, sy) {
+  const { o, d } = ray3(sx, sy); if (d[1] > -1e-4) return null;
+  let y = camInfo().target[1], w = null;
+  for (let k = 0; k < 5; k++) { const t = (y - o[1]) / d[1]; if (t <= 0) return null; w = { x: o[0] + d[0] * t, y: o[2] + d[2] * t }; y = terrainAt(w.x, w.y) * pxPerM(); }
+  return w;
+}
+function rulerText(a, b) {
+  const L = dist(a, b) / pxPerM(); let t = fmtNum(L, L < 10 ? 2 : 1) + ' m';
+  if (S.terrain) { const dz = terrainAt(b.x, b.y) - terrainAt(a.x, a.y); if (Math.abs(dz) >= 0.1) t += '  (Δh ' + (dz > 0 ? '+' : '−') + fmtNum(Math.abs(dz), 1) + ' m)'; }
+  return t;
+}
+function drawRuler(ctx, toScr) {
+  const R = S.ruler; if (!R) return;
+  const a = toScr(R.a), b = toScr(R.b); if (!a || !b) return;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2.2; ctx.setLineDash(R.live ? [7, 4] : []); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt';
+  for (const q of [a, b]) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, 7); ctx.fill(); ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.stroke(); }
+  const t = rulerText(R.a, R.b); ctx.font = 'bold 13px system-ui, sans-serif'; const w = ctx.measureText(t).width + 14;
+  drawLabel(ctx, { x: (a.x + b.x) / 2 - w / 2, y: (a.y + b.y) / 2 - 26, w, h: 21 }, t, '#d6336c', null);
 }
 
 /* ---------------------------------------------------------- Vue 3D (WebGL 2) */
@@ -2542,13 +2669,13 @@ function buildVeg() {
   const g = new Geo();
   for (const t of V.trees || []) treeGeo(g, t, ppm);
   // canopée en surface continue (≤ 250 × 250 mailles) : bords qui retombent au sol
-  const st = Math.ceil(V.n / 250), m = Math.floor(V.n / st), cpx = V.cell * st * ppm, hh = new Float32Array(m * m);
-  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
-    let mx = 0; for (let b = 0; b < st; b++) for (let a = 0; a < st; a++) mx = Math.max(mx, V.h[(j * st + b) * V.n + i * st + a]);
+  const st = Math.ceil(Math.max(V.nx, V.ny) / 250), m = Math.floor(V.nx / st), my = Math.floor(V.ny / st), cpx = V.cell * st * ppm, hh = new Float32Array(m * my);
+  for (let j = 0; j < my; j++) for (let i = 0; i < m; i++) {
+    let mx = 0; for (let b = 0; b < st; b++) for (let a = 0; a < st; a++) mx = Math.max(mx, V.h[(j * st + b) * V.nx + i * st + a]);
     hh[j * m + i] = mx;
   }
-  const H = (i, j) => { i = clamp(i, 0, m - 1); j = clamp(j, 0, m - 1); const x = (i + 0.5) * cpx, z = (j + 0.5) * cpx, v = hh[j * m + i]; return (terrainAt(x, z) + (v > 0 ? v : -0.3)) * ppm; };
-  for (let j = 0; j < m - 1; j++) for (let i = 0; i < m - 1; i++) {
+  const H = (i, j) => { i = clamp(i, 0, m - 1); j = clamp(j, 0, my - 1); const x = (i + 0.5) * cpx, z = (j + 0.5) * cpx, v = hh[j * m + i]; return (terrainAt(x, z) + (v > 0 ? v : -0.3)) * ppm; };
+  for (let j = 0; j < my - 1; j++) for (let i = 0; i < m - 1; i++) {
     if (!(hh[j * m + i] || hh[j * m + i + 1] || hh[(j + 1) * m + i] || hh[(j + 1) * m + i + 1])) continue;
     const P = (a, b) => [(a + 0.5) * cpx, H(a, b), (b + 0.5) * cpx];
     const N = (a, b) => v3.norm([-(H(a + 1, b) - H(a - 1, b)) / (2 * cpx), 1, -(H(a, b + 1) - H(a, b - 1)) / (2 * cpx)]);
@@ -2634,7 +2761,7 @@ function buildProject() {
   if (!S.terrain) gg.quad([0, 0, 0], [W, 0, 0], [W, 0, H], [0, 0, H], [0, 1, 0], [0, 0, 0, 0]);
   else {
     // maillage du relief (≤ 200 × 200 mailles), normales par différences centrées
-    const nx = Math.min(200, S.terrain.n), ny = Math.min(200, S.terrain.n), dxp = W / nx, dyp = H / ny;
+    const nx = Math.min(200, S.terrain.nx), ny = Math.min(200, S.terrain.ny), dxp = W / nx, dyp = H / ny;
     const P = [];
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) P.push(terrainAt(i * dxp, j * dyp) * ppm);
     const at = (i, j) => P[clamp(j, 0, ny) * (nx + 1) + clamp(i, 0, nx)];
@@ -2746,6 +2873,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
     }
   }
   if (S.mode === 'select') drawHandles3(ctx, ci);
+  drawSiteHandles(ctx, q => scr3(ci, q)); drawRuler(ctx, q => scr3(ci, q, 0.3));
   // boussole (nord projeté à l'écran) et cadran solaire
   const o = toScreen3(ci.VP, ci.target);
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
@@ -2856,6 +2984,7 @@ glcv.addEventListener('pointerdown', e => {
   if (e.button === 2) { drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, right: true }; return; }
   if (e.button !== 0) return;
   { const dk = dialHit(p); if (dk) { drag3 = dialDown(p, dk); return; } }
+  if (S.ruler) { if (S.ruler.live) { const q = ground3pt(p.x, p.y); if (q) S.ruler.b = q; S.ruler.live = false; S.dirty = true; return; } S.ruler = null; S.dirty = true; }
   if (e.shiftKey) return startOrbit(e);
   // poignées du toit (immeuble sélectionné) : comme en 2D, sur le plan horizontal du toit
   const hs = handles3();
@@ -2869,6 +2998,7 @@ glcv.addEventListener('pointerdown', e => {
       return;
     }
   }
+  { const sh = siteHit(p); if (sh) { drag3 = siteDragStart(sh); return; } }
   const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
   if (hit && hit.kind === 'proj') {
     if (hit.bi !== S.sel) { S.editB = false; selectBuilding(hit.bi); }
@@ -2880,13 +3010,15 @@ glcv.addEventListener('pointerdown', e => {
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
+  if (!drag3 && S.ruler && S.ruler.live) { const q = ground3pt(ev3(e).x, ev3(e).y); if (q) { S.ruler.b = q; S.dirty = true; } }
   if (!drag3) {
     const q = ev3(e), hs = handles3();
     const h = hs && hs.find(h => Math.hypot(h.x - q.x, h.y - q.y) < 10);
-    glcv.style.cursor = dialHit(q) ? 'pointer' : h ? (h.kind === 'rot' ? 'grab' : 'crosshair') : 'default'; return;
+    glcv.style.cursor = dialHit(q) ? 'pointer' : siteHit(q) ? 'move' : h ? (h.kind === 'rot' ? 'grab' : 'crosshair') : 'default'; return;
   }
   const p = ev3(e);
   if (drag3.type === 'dial') return dialMove(drag3, p);
+  if (drag3.type === 'site') return siteDragMove(drag3, p);
   if (drag3.type === 'orbit') {
     const dx = e.clientX - drag3.lx, dy = e.clientY - drag3.ly; drag3.lx = e.clientX; drag3.ly = e.clientY;
     if (drag3.right && !drag3.moved && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 6) return;
@@ -2918,6 +3050,7 @@ glcv.addEventListener('pointermove', e => {
 });
 glcv.addEventListener('pointerup', e => {
   if (drag3 && drag3.type === 'dial') { dialUp(drag3); drag3 = null; return; }
+  if (drag3 && drag3.type === 'site') { const d = drag3; drag3 = null; siteDragEnd(d); return; }
   if (drag3 && drag3.right && !drag3.moved) context3D(ev3(e), e.clientX, e.clientY);
   const wasOrbit = drag3 && drag3.type === 'orbit' && drag3.moved;
   drag3 = null; glcv.style.cursor = 'default';
@@ -2931,11 +3064,11 @@ glcv.addEventListener('dblclick', e => {
 function context3D(p, cx, cy) {
   const dk = dialHit(p); if (dk) return menuDial(dk, cx, cy);
   const hit = pick3(p.x, p.y, true);
-  if (!hit) return menuBg(cx, cy);
+  if (!hit) return menuBg(cx, cy, ground3pt(p.x, p.y));
   if (hit.kind === 'proj') { selectBuilding(hit.bi); return menuProj(S.building, hit.part, cx, cy); }
   if (hit.kind === 'nb') return menuNb(hit.c, cx, cy);
   if (hit.kind === 'tree') return menuTree(hit.t, cx, cy);
-  menuBg(cx, cy);
+  menuBg(cx, cy, ground3pt(p.x, p.y));
 }
 glcv.addEventListener('wheel', e => {
   e.preventDefault();
