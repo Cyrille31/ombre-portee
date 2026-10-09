@@ -14,7 +14,7 @@ html,body{margin:0;height:100%;font:13px/1.35 system-ui,-apple-system,"Segoe UI"
 #app{display:flex;height:100vh;overflow:hidden}
 aside{width:340px;min-width:300px;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:8px 12px 40px}
 main{flex:1;display:flex;flex-direction:column;min-width:0}
-h1{font-size:16px;margin:4px 0 8px}
+h1{font-size:16px;margin:-8px -12px 8px;padding:10px 12px 8px;position:sticky;top:-8px;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:14px 0 6px;border-top:1px solid var(--line);padding-top:10px}
 section:first-of-type h2{border-top:none;padding-top:0}
 h2{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
@@ -66,6 +66,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
 [hidden]{display:none!important}
 .pop{position:fixed;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.2);padding:8px 10px;width:250px}
 .pop .t{font-weight:600;margin-bottom:4px}
+.pop .f .lbl{width:96px}
+.pop input[type=range]{flex:1}
+.pop .sep{border-top:1px solid var(--line);margin:6px 0}
 @media print{
   @page{margin:10mm}
   html,body{height:auto;background:#fff}
@@ -219,7 +222,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row"><label><input type="checkbox" id="cOrig" checked> Contour de l'emplacement d'origine</label></div>
     <div class="row"><label><input type="checkbox" id="cDims" checked> Cotes sur le plan</label></div>
     <div class="row"><label><input type="checkbox" id="cNbLbl" checked> Hauteurs des constructions voisines</label></div>
-    <div class="row" style="gap:2px"><span class="hint" style="width:110px">Luminosité du fond</span><input type="range" id="rBright" min="-60" max="60" step="5" style="flex:1"><span id="vBright" class="hint" style="width:36px;text-align:right"></span></div>
+    <div class="row" style="gap:2px"><span class="hint" style="width:110px">Luminosité du fond</span><input type="range" id="rBright" min="-60" max="150" step="5" style="flex:1"><span id="vBright" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px">Contraste du fond</span><input type="range" id="rContrast" min="40" max="200" step="5" style="flex:1"><span id="vContrast" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="row" style="gap:2px"><span class="hint" style="width:110px" title="Arbres en 3D : 0 % = opaques ; les ombres des arbres sont atténuées d'autant (feuillage clairsemé, hiver)">Transparence arbres</span><input type="range" id="rTreeT" min="0" max="90" step="5" style="flex:1"><span id="vTreeT" class="hint" style="width:36px;text-align:right"></span></div>
     <div class="hint aide" style="margin-top:8px">
@@ -258,12 +261,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
   <div id="printInfo"></div>
   <img id="printImg" alt="">
 </div>
-<div id="hPop" class="pop" hidden>
-  <div class="t" id="hPopT">Hauteur</div>
-  <div class="f"><input type="text" id="hPopV" class="big"><span class="u">m</span></div>
-  <div class="hint">Molette : ± 0,5 m (Maj : ± 0,1 m). Entrée pour valider.</div>
-  <div class="row"><button id="hPopOk" class="on">OK</button><button id="hPopDel">Supprimer la hauteur</button></div>
-</div>
+<div id="hPop" class="pop" hidden></div>
 <input type="file" id="fileIn" accept="image/*,.pdf,.json,application/pdf" hidden>
 
 <script>
@@ -297,7 +295,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, hHigh: false, dialStep: 3, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -306,7 +304,9 @@ const S = {
   mode: 'select', temp: null, playing: false, playSpeed: 60,
   dirty: true
 };
-const V = { s: 1, ox: 0, oy: 0 };
+const V = { s: 1, ox: 0, oy: 0, rot: 0 };   // vue 2D : échelle, décalage, rotation (rad, sens horaire)
+/** Centre la vue 2D sur le point (cx, cy) du plan. */
+function setView(cx, cy, s, rot = V.rot) { const c = Math.cos(rot), sn = Math.sin(rot); V.s = s; V.rot = rot; V.ox = CW / 2 - s * (cx * c - cy * sn); V.oy = CH / 2 - s * (cx * sn + cy * c); S.dirty = true; }
 // Immeubles projetés : S.buildings ; S.building, S.height et S.dz désignent l'immeuble sélectionné
 let bidSeq = 0;
 S.buildings = []; S.sel = -1; S._h = 15; S._dz = 0;
@@ -762,10 +762,12 @@ function resizeCanvas() {
 function fitView() {
   if (!S.clean) return;
   const s = Math.min(CW / S.clean.width, CH / S.clean.height) * 0.96;
-  V.s = s; V.ox = (CW - S.clean.width * s) / 2; V.oy = (CH - S.clean.height * s) / 2; S.dirty = true;
+  setView(S.clean.width / 2, S.clean.height / 2, s, 0);
 }
-const toS = (p, v = V) => ({ x: v.ox + p.x * v.s, y: v.oy + p.y * v.s });
-const toW = (p, v = V) => ({ x: (p.x - v.ox) / v.s, y: (p.y - v.oy) / v.s });
+const toS = (p, v = V) => { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); return { x: v.ox + v.s * (p.x * c - p.y * sn), y: v.oy + v.s * (p.x * sn + p.y * c) }; };
+const toW = (p, v = V) => { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0), dx = (p.x - v.ox) / v.s, dy = (p.y - v.oy) / v.s; return { x: dx * c + dy * sn, y: -dx * sn + dy * c }; };
+/** Vecteur du plan → direction à l'écran (2D). */
+const rotS = (u, v = V) => { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); return { x: u.x * c - u.y * sn, y: u.x * sn + u.y * c }; };
 function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; }
 function polyPath(ctx, pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); }
 
@@ -822,7 +824,7 @@ function render(ctx, W, H, v, opt = {}) {
   const b = S.building, BL = S.buildings, ppm = pxPerM(), hM = b ? hOf(b) : 0, sun = curSun(), px = 1 / v.s;
   // ombres de tous les immeubles en un seul tracé (union : pas de double assombrissement)
   const shadowsPath = s => { ctx.beginPath(); let any = false; for (const bb of BL) { const so = shadowOffset(s, hOf(bb)); if (!so) continue; any = true; shadowPoly(bb, so).forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
-  ctx.save(); ctx.setTransform(k * v.s, 0, 0, k * v.s, k * v.ox, k * v.oy);
+  ctx.save(); { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); ctx.setTransform(k * v.s * c, k * v.s * sn, -k * v.s * sn, k * v.s * c, k * v.ox, k * v.oy); }
   ctx.imageSmoothingEnabled = v.s < 3;
   ctx.filter = bgFilter(); ctx.drawImage(S.clean, 0, 0); ctx.filter = 'none';
   if (S.showOrig && S.origRect && b && (Math.abs(b.cx - S.origRect.cx) + Math.abs(b.cy - S.origRect.cy) + Math.abs(b.w - S.origRect.w) + Math.abs(b.l - S.origRect.l) + Math.abs(b.a - S.origRect.a) * 100 > 0.5)) {
@@ -943,7 +945,7 @@ function render(ctx, W, H, v, opt = {}) {
   }
 
   // poignées
-  if (b && !print && S.mode === 'select') {
+  if (b && !print && S.mode === 'select' && S.editB) {
     const hs = handles();
     ctx.strokeStyle = BLD_DARK; ctx.lineWidth = 1.5;
     const top = hs.find(h => h.kind === 'rot');
@@ -964,7 +966,7 @@ function render(ctx, W, H, v, opt = {}) {
     let a, dir;
     if (s.so) {
       const tip = toS(farEdge(s.poly, { x: b.cx + s.so.x, y: b.cy + s.so.y }, s.so), v);   // bord extrême de l'ombre
-      dir = Math.atan2(s.so.y, s.so.x);
+      dir = Math.atan2(s.so.y, s.so.x) + (v.rot || 0);
       a = { x: clamp(tip.x, 12, W - 12), y: clamp(tip.y, 12, H - 12) };
     } else { a = toS({ x: b.cx, y: b.cy }, v); dir = Math.PI / 2; }
     drawLabel(ctx, P.place(a.x, a.y, w, 19, dir), txt, s.col, a);
@@ -981,7 +983,7 @@ function render(ctx, W, H, v, opt = {}) {
   });
 
   // boussole et cadran solaire
-  drawDials(ctx, W, H, northVecs().N, sun);
+  drawDials(ctx, W, H, rotS(northVecs().N, v), sun);
   // échelle graphique
   {
     const mPerPx = 1 / (ppm * v.s), L = niceLen(140 * mPerPx), w = L / mPerPx, x0 = 14, y0 = H - 22;
@@ -1017,12 +1019,12 @@ function handles(v = V) {
     out.push({ kind: 'size', hx, hy, ...toS(localToWorld(b, hx * b.w / 2, hy * b.l / 2), v) });
   }
   const tm = toS(localToWorld(b, 0, -b.l / 2), v);
-  out.push({ kind: 'rot', x: tm.x + Math.sin(b.a) * 28, y: tm.y - Math.cos(b.a) * 28 });
+  out.push({ kind: 'rot', x: tm.x + Math.sin(b.a + V.rot) * 28, y: tm.y - Math.cos(b.a + V.rot) * 28 });
   return out;
 }
 function hitTest(p) {
   const b = S.building; if (!b) return null;
-  if (S.mode === 'select') {
+  if (S.mode === 'select' && S.editB) {
     const hs = handles();
     const r = hs.find(h => h.kind === 'rot' && Math.hypot(h.x - p.x, h.y - p.y) < 10); if (r) return r;
     let best = null, bd = 9;
@@ -1051,8 +1053,10 @@ cv.addEventListener('pointerdown', e => {
   const p = evPos(e), w = toW(p);
   const pan = () => { drag = { type: 'pan', sx: p.x, sy: p.y, ox: V.ox, oy: V.oy }; cv.style.cursor = 'grabbing'; };
   if (e.button === 0) { const dk = dialHit(p); if (dk) { drag = dialDown(p, dk); return; } }
+  // clic droit : menu si on ne bouge pas ; glisser = passage en 3D (Maj + clic droit : déplacer la vue)
+  if (e.button === 2 && !e.shiftKey) { drag = { type: 'r2', sx: p.x, sy: p.y, pid: e.pointerId }; return; }
   if (e.button === 1 || e.button === 2) { pan(); drag.btn = e.button; return; }
-  if (e.button === 0 && e.shiftKey && S.mode === 'select' && !(hitTest(p) || {}).hx && (hitTest(p) || {}).kind !== 'rot') {
+  if (e.button === 0 && e.shiftKey && S.mode === 'select' && !(S.editB && hitTest(p) && hitTest(p).kind !== 'move')) {
     // Maj + glisser : passage en 3D et rotation de la vue
     if (enter3D()) { cv.releasePointerCapture(e.pointerId); glcv.setPointerCapture(e.pointerId); startOrbit(e); }
     return;
@@ -1076,8 +1080,8 @@ cv.addEventListener('pointerdown', e => {
     return pan();
   }
   const h = hitTest(p);
-  if (!h) return pan();
-  if (h.kind === 'move') selectBuilding(h.bi);
+  if (!h) { if (S.editB) { S.editB = false; S.dirty = true; } return pan(); }
+  if (h.kind === 'move' && h.bi !== S.sel) { S.editB = false; selectBuilding(h.bi); }
   const b = S.building;
   if (h.kind === 'move') drag = { type: 'move', sx: w.x, sy: w.y, cx: b.cx, cy: b.cy };
   else if (h.kind === 'rot') drag = { type: 'rot', a0: b.a, t0: Math.atan2(w.y - b.cy, w.x - b.cx) };
@@ -1089,6 +1093,13 @@ cv.addEventListener('pointermove', e => {
   if (!drag) { if (S.clean && dialHit(p)) { cv.style.cursor = 'pointer'; return; } if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
   const b = S.building;
   if (drag.type === 'dial') return dialMove(drag, p);
+  if (drag.type === 'r2') {
+    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) > 6 && enter3D(true)) {
+      closePop(); cv.releasePointerCapture(drag.pid); glcv.setPointerCapture(drag.pid);
+      drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY, sx: e.clientX - 99, sy: e.clientY, right: true, moved: true }; drag = null;
+    }
+    return;
+  }
   switch (drag.type) {
     case 'pan': V.ox = drag.ox + p.x - drag.sx; V.oy = drag.oy + p.y - drag.sy; break;
     case 'draw': S.temp.p2 = w; break;
@@ -1112,28 +1123,36 @@ cv.addEventListener('pointermove', e => {
 cv.addEventListener('pointerup', e => {
   if (!drag) return;
   if (drag.type === 'dial') { dialUp(drag); drag = null; return; }
-  if (drag.type === 'pan' && drag.btn === 2) {   // clic droit sans glisser : hauteur
+  if (drag.type === 'r2' || (drag.type === 'pan' && drag.btn === 2)) {   // clic droit sans glisser : menu local
     const p = evPos(e);
-    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 4) {
-      const w = toW(p), h = S.building && hitTest(p), c = nbAt(w.x, w.y);
-      if (h && h.kind === 'move') selectBuilding(h.bi);
-      heightPopupFor(h && h.kind === 'move' ? { kind: 'proj' } : c ? { kind: 'nb', c } : null, e.clientX, e.clientY);
-    }
+    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 6) context2D(p, e.clientX, e.clientY);
+    if (drag.type === 'r2') { drag = null; return; }
   }
   if (drag.type === 'draw') {
     const { p1, p2 } = S.temp; S.temp = null;
-    if (Math.abs(p2.x - p1.x) * V.s > 5 && Math.abs(p2.y - p1.y) * V.s > 5) {
-      addBuilding(longSide({ cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(p2.x - p1.x), l: Math.abs(p2.y - p1.y), a: 0 }));
+    if (dist(toS(p1), toS(p2)) > 7) {
+      const a = toS(p1), c = toS(p2);
+      addBuilding(longSide({ cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: Math.abs(c.x - a.x) / V.s, l: Math.abs(c.y - a.y) / V.s, a: -V.rot }));
       setMode('select');
     }
   }
   drag = null; cv.style.cursor = 'default'; changed();
 });
+function context2D(p, cx, cy) {
+  const dk = dialHit(p); if (dk) return menuDial(dk, cx, cy);
+  const w = toW(p), h = S.building && hitTest(p), c = nbAt(w.x, w.y);
+  if (h && h.kind === 'move') { selectBuilding(h.bi); return menuProj(S.building, 'roof', cx, cy); }
+  if (c) return menuNb(c, cx, cy);
+  menuBg(cx, cy);
+}
+cv.addEventListener('dblclick', e => {   // double-clic : poignées de l'immeuble
+  const h = hitTest(evPos(e)); if (h && h.kind === 'move') { selectBuilding(h.bi); S.editB = true; S.dirty = true; }
+});
 cv.addEventListener('wheel', e => {
   e.preventDefault(); if (!S.clean) return;
-  if (dialHit(evPos(e)) === 'sundial') { if (Math.abs(normWheel(e)) >= 4) dialWheel(normWheel(e) < 0 ? 1 : -1); return; }
+  { const dk = dialHit(evPos(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = evPos(e), f = Math.exp(-normWheel(e) * 0.0015), w = toW(p);
-  V.s = clamp(V.s * f, 0.02, 40); V.ox = p.x - w.x * V.s; V.oy = p.y - w.y * V.s; S.dirty = true;
+  V.s = clamp(V.s * f, 0.02, 40); { const c = Math.cos(V.rot), sn = Math.sin(V.rot); V.ox = p.x - V.s * (w.x * c - w.y * sn); V.oy = p.y - V.s * (w.x * sn + w.y * c); } S.dirty = true;
 }, { passive: false });
 function finishScale() {
   const { p1, p2 } = S.temp; S.temp = null;
@@ -1268,7 +1287,7 @@ $('cHigh').onchange = e => { S.hHigh = e.target.checked; changed(); };
 $('colRoof').oninput = e => { if (S.building) { S.building.roofCol = e.target.value; changed(); } };
 $('colWall').oninput = e => { if (S.building) { S.building.wallCol = e.target.value; changed(); } };
 // curseurs : molette
-for (const [id, k, st, lo, hi] of [['rOpa', 'opacity', 0.05, 0.1, 0.9], ['rBright', 'bright', 5, -60, 60], ['rContrast', 'contrast', 5, 40, 200], ['rTreeT', 'treeT', 5, 0, 90]])
+for (const [id, k, st, lo, hi] of [['rOpa', 'opacity', 0.05, 0.1, 0.9], ['rBright', 'bright', 5, -60, 150], ['rContrast', 'contrast', 5, 40, 200], ['rTreeT', 'treeT', 5, 0, 90]])
   attachScrub($(id), n => { S[k] = clamp(Math.round((S[k] + n * st) / st) * st, lo, hi); changed(); });
 $('cPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) composeSite(); changed(); };
 $('cCad').onchange = e => { S.showCad = e.target.checked; if (S.layers) composeSite(); changed(); };
@@ -1342,7 +1361,7 @@ $('scenPreset').onchange = e => {
   let st = {}; try { st = JSON.parse(localStorage.getItem('ombre-portee-sections') || '{}'); } catch (e) { }
   document.querySelectorAll('aside section').forEach(sec => {
     const h = sec.querySelector('h2'), key = h.textContent.trim();
-    if (st[key] || /^Lieu et orientation|^Échelle/.test(key)) sec.classList.add('collapsed');   // réduites au lancement
+    if (sec !== document.querySelector('aside section')) sec.classList.add('collapsed');   // au lancement, seul le bloc « adresse » est ouvert
     h.title = 'Cliquer pour replier / déplier';
     h.addEventListener('click', () => {
       st[key] = sec.classList.toggle('collapsed');
@@ -1463,9 +1482,9 @@ $('btnSaveProj').onclick = async () => {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
-    view: { view3d: S.view3d, v2: { cx: (CW / 2 - V.ox) / V.s, cy: (CH / 2 - V.oy) / V.s, s: V.s }, cam: G.camSet ? { ...G.cam } : null }
+    view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
   await saveBlob(new Blob([JSON.stringify(p)], { type: 'application/json' }), S.fileName + '.ombre.json', 'Projet Ombre portée', 'application/json', '.json');
 };
@@ -1478,7 +1497,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = cc.height = im.width; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -1486,7 +1505,7 @@ async function loadProject(p) {
   setImage(c, S.layers ? null : p.image, p.fileName, true, p.site ? siteFromSave(p.site) : null);
   const vw = p.view;
   if (vw) {
-    if (vw.v2) { V.s = vw.v2.s; V.ox = CW / 2 - vw.v2.cx * vw.v2.s; V.oy = CH / 2 - vw.v2.cy * vw.v2.s; }
+    if (vw.v2) setView(vw.v2.x !== undefined ? vw.v2.x : vw.v2.cx, vw.v2.y !== undefined ? vw.v2.y : vw.v2.cy, vw.v2.s, vw.v2.rot || 0);
     if (vw.cam) { Object.assign(G.cam, vw.cam); G.camSet = true; }
     if (vw.view3d && initGL()) { S.view3d = false; enter3D(); if (vw.cam) Object.assign(G.cam, vw.cam); }
     else if (!vw.view3d) exit3D();
@@ -1700,39 +1719,113 @@ function applyHeights(arr) {
 }
 const savedHeights = () => NB ? NB.list.filter(c => c.h !== undefined).map(c => ({ x: Math.round(c.lx * 10) / 10, y: Math.round(c.ly * 10) / 10, h: c.h })) : [];
 
-/* ------------------------------------------- Fenêtre de saisie de la hauteur */
-const hPop = $('hPop'); let popCtx = null;
-function openPop(cx, cy, o) {
-  popCtx = o; $('hPopT').textContent = o.title; $('hPopDel').hidden = !o.del;
-  hPop.hidden = false;
-  const r = hPop.getBoundingClientRect();
-  hPop.style.left = clamp(cx + 14, 4, innerWidth - r.width - 4) + 'px';
-  hPop.style.top = clamp(cy - 24, 4, innerHeight - r.height - 4) + 'px';
-  popShow(); $('hPopV').focus(); $('hPopV').select(); changed();
+/* ------------------------------------------------ Menus du clic droit */
+const hPop = $('hPop'); let popOpen = false;
+function closePop() { hPop.hidden = true; popOpen = false; hPop.innerHTML = ''; }
+const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
+/** Ouvre une petite fenêtre près du pointeur ; build(api) y ajoute des réglages (appliqués aussitôt). */
+function openMenu(cx, cy, title, build) {
+  closePop(); hPop.append(mk('div', 't', title));
+  const refresh = [];
+  const api = {
+    num(label, get, set, o = {}) {
+      const row = mk('div', 'f'), inp = mk('input'); inp.type = 'text'; inp.className = o.big ? 'big' : '';
+      row.append(mk('span', 'lbl', label), inp, mk('span', 'u', o.unit || ''));
+      const show = () => inp.value = fmtLen(get()); show(); refresh.push(show);
+      attachScrub(row, (n, e) => { const st = e.shiftKey ? (o.fine || 0.1) : (o.step || 0.5); set(clamp(Math.round((get() + n * st) / st) * st, o.min ?? 0, o.max ?? 1000)); refresh.forEach(f => f()); changed(); }, null, true);
+      inp.addEventListener('input', () => { const v = parseNum(inp.value); if (isFinite(v)) { set(clamp(v, o.min ?? 0, o.max ?? 1000)); changed(); } });
+      hPop.append(row); return inp;
+    },
+    color(label, get, set) {
+      const row = mk('div', 'f'), inp = mk('input'); inp.type = 'color'; inp.value = get();
+      inp.oninput = () => { set(inp.value); changed(); }; row.append(mk('span', 'lbl', label), inp); hPop.append(row);
+    },
+    check(label, get, set) {
+      const lab = mk('label'), inp = mk('input'); inp.type = 'checkbox'; inp.checked = get();
+      inp.onchange = () => { set(inp.checked); changed(); }; lab.append(inp, ' ' + label);
+      const row = mk('div', 'row'); row.append(lab); hPop.append(row);
+    },
+    range(label, get, set, min, max, step, fmt) {
+      const row = mk('div', 'row'), inp = mk('input'), val = mk('span', 'hint'); inp.type = 'range'; Object.assign(inp, { min, max, step });
+      const show = () => { inp.value = get(); val.textContent = fmt(get()); }; show(); refresh.push(show);
+      inp.oninput = () => { set(+inp.value); show(); changed(); };
+      attachScrub(inp, n => { set(clamp(Math.round((get() + n * step) / step) * step, min, max)); show(); changed(); });
+      row.append(mk('span', 'hint', label), inp, val); row.firstChild.style.width = '96px'; val.style.width = '42px'; hPop.append(row);
+    },
+    choices(label, opts, get, set) {
+      const row = mk('div', 'row'); if (label) row.append(mk('span', 'hint', label));
+      const btns = opts.map(([t, v]) => { const b = mk('button', 'small', t); b.onclick = () => { set(v); paint(); refresh.forEach(f => f()); changed(); }; row.append(b); return [b, v]; });
+      const paint = () => btns.forEach(([b, v]) => b.classList.toggle('on', get() === v)); paint(); refresh.push(paint);
+      hPop.append(row);
+    },
+    button(label, fn) { const b = mk('button', 'small', label); b.onclick = () => { fn(); changed(); }; let row = hPop.lastChild; if (!row || !row.classList.contains('btns')) { row = mk('div', 'row btns'); hPop.append(row); } row.append(b); },
+    hint(t) { hPop.append(mk('div', 'hint', t)); },
+    sep() { hPop.append(mk('div', 'sep')); }
+  };
+  build(api);
+  const ok = mk('button', 'on small', 'OK'); ok.onclick = closePop; const row = mk('div', 'row'); row.style.justifyContent = 'flex-end'; row.append(ok); hPop.append(row);
+  hPop.hidden = false; popOpen = true;
+  const rc = hPop.getBoundingClientRect();
+  hPop.style.left = clamp(cx + 14, 4, innerWidth - rc.width - 4) + 'px';
+  hPop.style.top = clamp(cy - 24, 4, innerHeight - rc.height - 4) + 'px';
+  const first = hPop.querySelector('input[type=text]'); if (first) { first.focus(); first.select(); }
+  changed();
 }
-function popShow() { if (popCtx) $('hPopV').value = fmtLen(popCtx.get()); }
-function closePop() { hPop.hidden = true; popCtx = null; }
-attachScrub(hPop, (n, e) => {
-  if (!popCtx) return;
-  const st = e.shiftKey ? 0.1 : 0.5;
-  popCtx.set(clamp(Math.round((popCtx.get() + n * st) / st) * st, 0, 1000)); popShow(); changed();
-}, null, true);
-$('hPopV').addEventListener('input', e => { const v = parseNum(e.target.value); if (popCtx && isFinite(v) && v >= 0) { popCtx.set(Math.min(v, 1000)); changed(); } });
-$('hPopV').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') closePop(); e.stopPropagation(); });
-$('hPopOk').onclick = closePop;
-$('hPopDel').onclick = () => { if (popCtx && popCtx.del) popCtx.del(); closePop(); changed(); };
-document.addEventListener('pointerdown', e => { if (popCtx && !hPop.contains(e.target)) closePop(); }, true);
-/** Clic droit : hauteur de l'immeuble projeté ou d'une construction voisine. */
-function heightPopupFor(target, cx, cy) {
-  if (!target) return false;
-  if (target.kind === 'proj') {
-    openPop(cx, cy, { title: 'Hauteur de l\'immeuble projeté', get: () => S.height, set: v => S.height = v });
-  } else {
-    const c = target.c;
-    if (c.h === undefined) { c.h = c.bd > 0 ? Math.round(c.bd * 10) / 10 : S.defH > 0 ? S.defH : S.lastNbH; S.hVer++; }
-    openPop(cx, cy, { title: 'Hauteur de la construction' + (c.nature ? ' — ' + c.nature : '') + (c.bd > 0 ? ' (BD TOPO : ' + fmtLen(c.bd) + ' m)' : ''), get: () => c.h, set: v => { c.h = v; S.lastNbH = v; S.hVer++; }, del: () => { delete c.h; S.hVer++; } });
-  }
-  return true;
+hPop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') closePop(); e.stopPropagation(); });
+document.addEventListener('pointerdown', e => { if (popOpen && !hPop.contains(e.target)) closePop(); }, true);
+function menuNb(c, cx, cy) {
+  if (c.h === undefined) { c.h = c.bd > 0 ? Math.round(c.bd * 10) / 10 : S.defH > 0 ? S.defH : S.lastNbH; S.hVer++; }
+  openMenu(cx, cy, 'Construction' + (c.nature ? ' — ' + c.nature : ''), m => {
+    m.num('Hauteur', () => c.h, v => { c.h = v; S.lastNbH = v; S.hVer++; }, { unit: 'm', big: true });
+    if (c.bd > 0) m.hint('BD TOPO : ' + fmtLen(c.bd) + ' m' + (c.roof ? ' (faîtage ; forme du toit d\'après le LiDAR)' : ''));
+    m.check('Afficher les hauteurs des constructions voisines', () => S.showNbLbl, v => S.showNbLbl = v);
+    m.button('Supprimer la hauteur', () => { delete c.h; S.hVer++; closePop(); });
+  });
+}
+function menuProj(b, part, cx, cy) {
+  openMenu(cx, cy, 'Immeuble projeté' + (S.buildings.length > 1 ? ' n° ' + (S.buildings.indexOf(b) + 1) : ''), m => {
+    m.num('Hauteur', () => b.h, v => { b.h = v; if (b === S.building) S.dH = v; }, { unit: 'm', big: true });
+    const roof = () => m.color('Couleur du toit', () => b.roofCol, v => b.roofCol = v), wall = () => m.color('Couleur des murs', () => b.wallCol, v => b.wallCol = v);
+    if (part === 'wall') { wall(); roof(); } else { roof(); wall(); }
+    if (S.terrain) m.check('Hauteur depuis le point le plus haut du terrain', () => S.hHigh, v => S.hHigh = v);
+    m.button('Modifier la forme', () => { S.editB = true; closePop(); });
+    m.button('Supprimer', () => { closePop(); $('btnDelB').onclick(); });
+  });
+}
+function menuBg(cx, cy) {
+  openMenu(cx, cy, 'Fond', m => {
+    m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
+    m.range('Contraste', () => S.contrast, v => S.contrast = v, 40, 200, 5, v => v + ' %');
+    m.range('Opacité ombre', () => S.opacity, v => S.opacity = v, 0.1, 0.9, 0.05, v => Math.round(v * 100) + ' %');
+    if (S.layers) {
+      m.check('Photo aérienne', () => S.bgMode === 'ortho', v => { S.bgMode = v ? 'ortho' : 'plan'; composeSite(); });
+      m.check('Cadastre', () => S.showCad, v => { S.showCad = v; composeSite(); });
+    }
+    if (S.veg) m.check('Arbres', () => S.showTrees, v => S.showTrees = v);
+  });
+}
+function menuTree(t, cx, cy) {
+  let val = treeCB(t);
+  openMenu(cx, cy, 'Arbre de ' + fmtLen(t.H) + ' m', m => {
+    m.range('Transparence (tous)', () => S.treeT, v => S.treeT = v, 0, 90, 5, v => v + ' %');
+    m.num('Bas du feuillage', () => val, v => { val = Math.min(v, t.H * 0.85); t.cb = val; S.vegVer++; }, { unit: 'm', step: 0.5, fine: 0.1, max: 60 });
+    m.hint('Réglage appliqué à cet arbre ; « Tous les arbres » l\'applique partout.');
+    m.button('Tous les arbres', () => { S.crownBase = val; for (const x of S.veg.trees) delete x.cb; S.vegVer++; });
+    m.button('Par défaut (¼ de la hauteur)', () => { S.crownBase = null; for (const x of S.veg.trees) delete x.cb; val = treeCB(t); S.vegVer++; closePop(); });
+  });
+}
+function menuDial(kind, cx, cy) {
+  if (kind === 'sundial') openMenu(cx, cy, 'Cadran solaire — pas de la molette', m => {
+    m.choices('', [['½ h', 0.5], ['1 h', 1], ['2 h', 2], ['3 h', 3], ['6 h', 6]], () => S.dialStep, v => S.dialStep = v);
+    m.num('Pas', () => S.dialStep, v => S.dialStep = v, { unit: 'h', step: 0.5, fine: 0.25, min: 0.25, max: 12 });
+  });
+  else if (kind === 'calendar') openMenu(cx, cy, 'Calendrier — pas de la molette', m => {
+    m.choices('', CAL_STEPS.map(([t, v]) => [t, v]), () => S.calStep, v => S.calStep = v);
+  });
+  else openMenu(cx, cy, 'Boussole — pas de la molette', m => {
+    m.choices('', [['5°', 5], ['10°', 10], ['15°', 15], ['45°', 45], ['90°', 90]], () => S.compStep, v => S.compStep = v);
+    m.num('Pas', () => S.compStep, v => S.compStep = v, { unit: '°', step: 1, fine: 0.5, min: 0.5, max: 180 });
+  });
 }
 
 /* -------------------------------------- Site à partir d'une adresse (IGN) */
@@ -2079,8 +2172,22 @@ function siteFromSave(st) {
 
 /* ------------------------------------------- Boussole et cadran solaire */
 function dialLayout(W = CW, H = CH) {
-  const R = 58, cx = W - R - 18, cy = R + 18;
-  return { R, cx, cy, sx: cx, sy: cy + 2 * R + 40, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: 4 * R + 104 } };
+  const R = 58, cx = W - R - 18, cy = R + 18, sy = cy + 2 * R + 40, R3 = 50, ky = sy + R + 34 + R3;
+  return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: ky + R3 + 24 } };
+}
+const CAL_STEPS = [['1 jour', 'd1'], ['1 semaine', 'w1'], ['½ mois', 'm05'], ['1 mois', 'm1'], ['½ saison', 's05'], ['1 saison', 's1']];
+/** Angle (rad, depuis le haut, sens horaire) d'un jour sur le calendrier : 1er janvier en haut. */
+function calAngle(day) { const c = fromDays(day), y0 = toDays(c.y, 0, 1), n = toDays(c.y + 1, 0, 1) - y0; return (day - y0 + 0.5) / n * 2 * Math.PI; }
+function calStepBy(dir) {
+  switch (S.calStep) {
+    case 'w1': S.day += 7 * dir; break;
+    case 'm05': S.day += 15 * dir; break;
+    case 'm1': addMonths(dir); break;
+    case 's05': S.day += 46 * dir; break;
+    case 's1': S.day += 91 * dir; break;
+    default: S.day += dir;
+  }
+  changed();
 }
 /** Angle (rad, sens horaire depuis le haut) de l'ombre du style d'un cadran horizontal, à un instant donné. */
 function dialAngle(day, minute) {
@@ -2089,6 +2196,8 @@ function dialAngle(day, minute) {
   return { a: Math.atan2(Math.sin(phi) * Math.sin(H), Math.cos(H)), alt: s.alt };
 }
 /** Dessine la boussole (nord : vecteur écran n) et le cadran solaire. */
+/** Texte lisible sur tout fond (liseré blanc). */
+function haloText(ctx, t, x, y) { ctx.save(); ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); ctx.restore(); ctx.fillText(t, x, y); }
 function drawDials(ctx, W, H, n, sun) {
   const L = dialLayout(W, H), { R, cx, cy, sx, sy } = L, nx = n.x, ny = n.y;
   // boussole
@@ -2108,13 +2217,13 @@ function drawDials(ctx, W, H, n, sun) {
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(cx + sg * nx * (R - 10), cy + sg * ny * (R - 10)); ctx.lineTo(cx - ny * 9, cy + nx * 9); ctx.lineTo(cx + ny * 9, cy - nx * 9); ctx.closePath(); ctx.fill();
   }
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
-  ctx.font = 'bold 14px system-ui, sans-serif'; ctx.fillStyle = '#c00'; ctx.fillText('N', cx + nx * (R + 10), cy + ny * (R + 10));
+  ctx.font = 'bold 14px system-ui, sans-serif'; ctx.fillStyle = '#c00'; haloText(ctx, 'N', cx + nx * (R + 10), cy + ny * (R + 10));
   if (sun.alt > 0) {   // soleil sur le pourtour
     const a = sun.az * D2R, ux = nx * Math.cos(a) - ny * Math.sin(a), uy = nx * Math.sin(a) + ny * Math.cos(a), rr = R * (1 - sun.alt / 90) * 0.85 + 4;
     ctx.fillStyle = '#f5b301'; ctx.strokeStyle = '#a66f00'; ctx.beginPath(); ctx.arc(cx + ux * rr, cy + uy * rr, 7, 0, 7); ctx.fill(); ctx.stroke();
   }
   ctx.fillStyle = '#334'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText(sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
+  haloText(ctx, sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
   // cadran solaire horizontal, orienté comme le plan : l'ombre du style a la direction des ombres des immeubles
   const rot = Math.atan2(nx, -ny); L.rot = rot; dialRot = rot;
   ctx.fillStyle = 'rgba(255,253,245,0.94)'; ctx.strokeStyle = '#b9a77a'; ctx.lineWidth = 1.2;
@@ -2139,7 +2248,30 @@ function drawDials(ctx, W, H, n, sun) {
   }
   ctx.fillStyle = '#7a6a40'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 7); ctx.fill();
   ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334';
-  ctx.fillText(fmtTime(S.minute) + (S.utcMode ? ' TU' : '') + (cur.alt > 0 ? '' : ' (nuit)'), sx, sy + R + 13);
+  haloText(ctx, fmtTime(S.minute) + (S.utcMode ? ' TU' : '') + (cur.alt > 0 ? '' : ' (nuit)'), sx, sy + R + 13);
+  // calendrier : douze mois, flèche sur le jour courant, repères des solstices et équinoxes
+  const { kx, ky, R3 } = L, yr = fromDays(S.day).y;
+  ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.strokeStyle = '#9aa7bd'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(kx, ky, R3, 0, 7); ctx.fill(); ctx.stroke();
+  const SEAS = ['#cfe3f7', '#d8f0c8', '#fbe7a6', '#f6d2b0'];
+  for (let mth = 0; mth < 12; mth++) {
+    const a0 = calAngle(toDays(yr, mth, 1)) - Math.PI / 2, a1 = calAngle(toDays(yr, mth + 1, 1) - 1) - Math.PI / 2;
+    ctx.fillStyle = SEAS[Math.floor(((mth + 1) % 12) / 3)];
+    ctx.beginPath(); ctx.moveTo(kx, ky); ctx.arc(kx, ky, R3 - 2, a0, a1 + 0.004); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(kx + Math.cos(a0) * (R3 - 2), ky + Math.sin(a0) * (R3 - 2)); ctx.stroke();
+    const am = (a0 + a1) / 2; ctx.fillStyle = '#445'; ctx.font = '10px system-ui, sans-serif';
+    ctx.fillText('JFMAMJJASOND'[mth], kx + Math.cos(am) * (R3 - 11), ky + Math.sin(am) * (R3 - 11));
+  }
+  for (const [m0, d0] of [[2, 20], [5, 21], [8, 22], [11, 21]]) {
+    const a = calAngle(toDays(yr, m0, d0)) - Math.PI / 2; ctx.strokeStyle = '#7a869c'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(kx + Math.cos(a) * (R3 - 2), ky + Math.sin(a) * (R3 - 2)); ctx.lineTo(kx + Math.cos(a) * (R3 + 4), ky + Math.sin(a) * (R3 + 4)); ctx.stroke();
+  }
+  const ak = calAngle(Math.round(S.dDay));
+  ctx.strokeStyle = '#2b3550'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(kx, ky); ctx.lineTo(kx + Math.sin(ak) * (R3 - 16), ky - Math.cos(ak) * (R3 - 16)); ctx.stroke(); ctx.lineCap = 'butt';
+  ctx.fillStyle = '#2b3550'; ctx.beginPath(); ctx.arc(kx + Math.sin(ak) * (R3 - 16), ky - Math.cos(ak) * (R3 - 16), 4, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(kx, ky, 3.5, 0, 7); ctx.fill();
+  ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334'; haloText(ctx, fmtDate(S.day, true), kx, ky + R3 + 13);
   return L;
 }
 /** Partie du cadran visée (coordonnées écran du canevas). */
@@ -2148,9 +2280,10 @@ function dialHit(p) {
   const L = dialLayout();
   if (Math.hypot(p.x - L.cx, p.y - L.cy) <= L.R + 6) return 'compass';
   if (Math.hypot(p.x - L.sx, p.y - L.sy) <= L.R + 6) return 'sundial';
+  if (Math.hypot(p.x - L.kx, p.y - L.ky) <= L.R3 + 6) return 'calendar';
   return null;
 }
-const dialAng = (p, kind) => { const L = dialLayout(), c = kind === 'compass' ? [L.cx, L.cy] : [L.sx, L.sy]; return Math.atan2(p.x - c[0], -(p.y - c[1])); };
+const dialAng = (p, kind) => { const L = dialLayout(), c = kind === 'compass' ? [L.cx, L.cy] : kind === 'calendar' ? [L.kx, L.ky] : [L.sx, L.sy]; return Math.atan2(p.x - c[0], -(p.y - c[1])); };
 /** Glisser sur le cadran : l'heure dont l'ombre du style suit le pointeur. */
 let dialRot = 0;
 function dialSetTime(p) {
@@ -2168,25 +2301,40 @@ function dialMove(d, p) {
   if (Math.hypot(p.x - d.sx, p.y - d.sy) > 3) d.moved = true;
   if (!d.moved) return;
   if (d.kind === 'sundial') return dialSetTime(p);
+  if (d.kind === 'calendar') {   // la flèche suit le pointeur : jour de l'année
+    const yr = fromDays(S.day).y, y0 = toDays(yr, 0, 1), n = toDays(yr + 1, 0, 1) - y0, a = mod(dialAng(p, 'calendar'), 2 * Math.PI);
+    S.day = y0 + clamp(Math.floor(a / (2 * Math.PI) * n), 0, n - 1); S.dDay = S.day; changed(); return;
+  }
   const a = dialAng(p, 'compass'), da = Math.atan2(Math.sin(a - d.a), Math.cos(a - d.a)); d.a = a;
-  if (S.view3d) G.cam.yaw = mod(G.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI;
-  else { S.north = Math.round((mod(S.north + da * R2D + 180, 360) - 180) * 10) / 10; changed(); }
-  S.dirty = true;
+  rotateView(da);
 }
 /** Molette sur le cadran : sauts de « Pas du cadran » heures, calés sur midi. */
+/** Tourne la vue (2D ou 3D) de da rad dans le sens horaire ; null = nord en haut. */
+function rotateView(da) {
+  if (S.view3d) { G.cam.yaw = da === null ? S.north * D2R : mod(G.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI; }
+  else { const c = toW({ x: CW / 2, y: CH / 2 }); setView(c.x, c.y, V.s, da === null ? -S.north * D2R : mod(V.rot + da + Math.PI, 2 * Math.PI) - Math.PI); }
+  S.dirty = true;
+}
 let lastDialWheel = 0;
-function dialWheel(dir) {
+/** Molette sur un cadran : vers soi = plus tard / sens horaire. */
+function dialWheelEvt(kind, e) {
+  const d = normWheel(e); if (Math.abs(d) < 4) return;
   const now = performance.now(); if (now - lastDialWheel < 140) return; lastDialWheel = now;
+  const dir = d > 0 ? 1 : -1;
+  if (kind === 'sundial') dialWheel(dir);
+  else if (kind === 'calendar') calStepBy(dir);
+  else rotateView(dir * S.compStep * D2R);
+}
+function dialWheel(dir) {
   const st = Math.max(15, Math.round(S.dialStep * 60)), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);
   const k = (m - 720) / st, nk = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
   S.minute = d0 + 720 + nk * st; changed();
 }
 function dialUp(d) {
-  if (d.moved) return;
+  if (d.moved || d.kind === 'calendar') return;
   if (d.kind === 'sundial') {   // midi solaire
     const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + Math.round(ev.noon); changed();
-  } else if (S.view3d) { G.cam.yaw = S.north * D2R; S.dirty = true; }
-  else { S.north = S.site ? Math.round(l93North(S.site.lon) * 100) / 100 : 0; changed(); }
+  } else rotateView(null);
 }
 
 /* ---------------------------------------------------------- Vue 3D (WebGL 2) */
@@ -2247,11 +2395,12 @@ void main() {
   // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
   bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
   vec3 base = tex ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
-  if (tex || tree) base = clamp((base * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste
   // uShadowK : clarté à l'ombre, réglée par « Opacité de l'ombre »
   if (n.y > 0.5) k = mix(uShadowK, 1.0, l);                                 // sol et toits
   else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
-  oCol = vec4(base * k, crown ? uTreeOpa : 1.0);
+  vec3 col = base * k;
+  if (tex || tree) col = clamp((col * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste, après l'éclairage (comme en 2D)
+  oCol = vec4(col, crown ? uTreeOpa : 1.0);
 }`;
 const VS_DEPTH = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=3) in float aId;
@@ -2365,7 +2514,7 @@ const WALL = [0.93, 0.72, 0.43, 1], GREEN = [0.13, 0.64, 0.29, 1], GREEN_TOP = [
 const TREE = [0.27, 0.47, 0.2, 0.6], TRUNK = [0.42, 0.31, 0.2, 0.7];
 function buildVeg() {
   const V = S.veg, ppm = pxPerM(); if (!V) { if (G.bufs.veg) setBuf('veg', new Geo()); G.vegKey = ''; return; }
-  if (G.vegKey === V && G.vegPpm === ppm) return; G.vegKey = V; G.vegPpm = ppm;
+  if (G.vegKey === V && G.vegPpm === ppm && G.vegVer === S.vegVer) return; G.vegKey = V; G.vegPpm = ppm; G.vegVer = S.vegVer;
   const g = new Geo();
   for (const t of V.trees || []) treeGeo(g, t, ppm);
   // canopée en surface continue (≤ 250 × 250 mailles) : bords qui retombent au sol
@@ -2384,17 +2533,20 @@ function buildVeg() {
   setBuf('veg', g);
 }
 /** Arbre : tronc jusqu'au quart de la hauteur, houppier qui s'évase dès le tiers. */
+/** Bas du feuillage (m) : réglage de l'arbre, sinon réglage général, sinon ¼ de la hauteur. */
+const treeCB = t => Math.min(t.H * 0.85, t.cb !== undefined ? t.cb : S.crownBase !== null && S.crownBase !== undefined ? S.crownBase : t.H * 0.25);
 const TREE_PROF = [[0.25, 0.1], [0.33, 0.82], [0.42, 0.97], [0.55, 1], [0.7, 0.92], [0.83, 0.7], [0.93, 0.38], [1, 0]];
 function treeGeo(g, t, ppm) {
   const N = 8, x = t.x * ppm, z = t.y * ppm, y0 = (terrainAt(x, z) - 0.3) * ppm, Hp = t.H * ppm, R = t.R * ppm, rt = clamp(0.06 * t.R, 0.12, 0.45) * ppm;
+  const cf = clamp(treeCB(t) / t.H, 0.03, 0.85), fm = f => cf + (f - 0.25) * (1 - cf) / 0.75;   // profil recalé sur le bas du feuillage
   const ring = (k, r, y) => { const a = k / N * 2 * Math.PI; return [x + Math.cos(a) * r, y, z + Math.sin(a) * r]; };
   for (let k = 0; k < N; k++) {   // tronc
     const a0 = (k + 0.5) / N * 2 * Math.PI, nn = [Math.cos(a0), 0, Math.sin(a0)];
-    g.quad(ring(k, rt, y0), ring(k + 1, rt, y0), ring(k + 1, rt, y0 + 0.27 * Hp), ring(k, rt, y0 + 0.27 * Hp), nn, TRUNK);
+    g.quad(ring(k, rt, y0), ring(k + 1, rt, y0), ring(k + 1, rt, y0 + (cf + 0.02) * Hp), ring(k, rt, y0 + (cf + 0.02) * Hp), nn, TRUNK);
   }
   for (let s = 0; s + 1 < TREE_PROF.length; s++) {   // houppier (révolution du profil)
     const [f0, q0] = TREE_PROF[s], [f1, q1] = TREE_PROF[s + 1];
-    const ya = y0 + f0 * Hp, yb = y0 + f1 * Hp, ra = q0 * R, rb = q1 * R, sl = (ra - rb) / Math.max(1e-6, yb - ya);
+    const ya = y0 + fm(f0) * Hp, yb = y0 + fm(f1) * Hp, ra = q0 * R, rb = q1 * R, sl = (ra - rb) / Math.max(1e-6, yb - ya);
     for (let k = 0; k < N; k++) {
       const n0 = v3.norm([Math.cos(k / N * 2 * Math.PI), sl, Math.sin(k / N * 2 * Math.PI)]), n1 = v3.norm([Math.cos((k + 1) / N * 2 * Math.PI), sl, Math.sin((k + 1) / N * 2 * Math.PI)]);
       const P0 = ring(k, ra, ya), P1 = ring(k + 1, ra, ya), P2 = ring(k + 1, rb, yb), P3 = ring(k, rb, yb);
@@ -2587,14 +2739,30 @@ function ray3(sx, sy) {
 /** Point visé sur le plan horizontal passant par le point regardé (déplacements). */
 function ground3(sx, sy) { const { o, d } = ray3(sx, sy), y0 = camInfo().target[1]; if (d[1] > -1e-4) return null; const t = (y0 - o[1]) / d[1]; return [o[0] + d[0] * t, y0, o[2] + d[2] * t]; }
 /** Ce que l'on vise : l'immeuble projeté ou une construction voisine (marche le long du rayon). */
-function pick3(sx, sy) {
+function pick3(sx, sy, withTrees) {
   const { o, d } = ray3(sx, sy); if (d[1] > -1e-4) return null;
+  let tree = null;
+  if (withTrees && S.veg && S.showTrees && S.veg.trees) {   // houppiers : cylindres verticaux
+    const ppm = pxPerM();
+    for (const t of S.veg.trees) {
+      const X = t.x * ppm, Z = t.y * ppm, R = t.R * ppm, g0 = terrainAt(X, Z) * ppm, yb = g0 + treeCB(t) * ppm, yt = g0 + t.H * ppm;
+      const ox = o[0] - X, oz = o[2] - Z, A = d[0] * d[0] + d[2] * d[2], B = 2 * (ox * d[0] + oz * d[2]), C = ox * ox + oz * oz - R * R, D = B * B - 4 * A * C;
+      let th = null;
+      if (D >= 0 && A > 1e-12) { const t1 = (-B - Math.sqrt(D)) / (2 * A), y1 = o[1] + d[1] * t1; if (t1 > 0 && y1 >= yb && y1 <= yt) th = t1; else if (y1 > yt) { const tc = (yt - o[1]) / d[1], hx = ox + d[0] * tc, hz = oz + d[2] * tc; if (tc > 0 && hx * hx + hz * hz <= R * R) th = tc; } }
+      if (th !== null && (!tree || th < tree.th)) tree = { kind: 'tree', t, th };
+    }
+  }
+  const hitB = pick3B(o, d);
+  if (tree && (!hitB || tree.th < hitB.th)) return tree;
+  return hitB;
+}
+function pick3B(o, d) {
   const ppm = pxPerM(), mh = maxSceneH() + 1, tops = S.buildings.map(b => projTop(b));
   const lo = minSceneH(), t0 = Math.max(0, (o[1] - mh) / -d[1]), t1 = (o[1] - lo) / -d[1], step = Math.max(0.5, (t1 - t0) / 20000);
   for (let t = t0; t <= t1 + step; t += step) {
     const x = o[0] + d[0] * t, z = o[2] + d[2] * t, gy = S.terrain ? terrainAt(x, z) * ppm : 0, y = Math.max(gy, o[1] + d[1] * t);
-    for (let i = 0; i < S.buildings.length; i++) { const b = S.buildings[i]; if (y > tops[i]) continue; const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj', bi: i }; }
-    const c = nbAt(x, z); if (c && y <= (nbBase(c) + nbHeight(c)) * ppm + 0.5) return { kind: 'nb', c };
+    for (let i = 0; i < S.buildings.length; i++) { const b = S.buildings[i]; if (y > tops[i]) continue; const l = worldToLocal(b, x, z); if (Math.abs(l.x) <= b.w / 2 && Math.abs(l.y) <= b.l / 2) return { kind: 'proj', bi: i, th: t, part: y > tops[i] - 1.5 * step - 0.3 * ppm ? 'roof' : 'wall' }; }
+    const c = nbAt(x, z); if (c && y <= (nbBase(c) + nbHeight(c)) * ppm + 0.5) return { kind: 'nb', c, th: t };
     if (y <= gy) break;   // sol atteint
   }
   return null;
@@ -2603,7 +2771,7 @@ function pick3(sx, sy) {
 function planeHit(sx, sy, y) { const { o, d } = ray3(sx, sy); if (Math.abs(d[1]) < 1e-6) return null; const t = (y - o[1]) / d[1]; return t > 0 ? { x: o[0] + d[0] * t, y: o[2] + d[2] * t } : null; }
 /** Poignées de l'immeuble sélectionné, sur son toit, en coordonnées écran. */
 function handles3(ci = camInfo()) {
-  const b = S.building; if (!b || !S.edit3d) return null;
+  const b = S.building; if (!b || !S.editB) return null;
   const y = projTop(b), out = [], P = (lx, ly) => { const w = localToWorld(b, lx, ly); return toScreen3(ci.VP, [w.x, y, w.y]); };
   for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) { if (!hx && !hy) continue; const q = P(hx * b.w / 2, hy * b.l / 2); if (q) out.push({ kind: 'size', hx, hy, ...q }); }
   const rq = P(0, -b.l / 2 - Math.max(b.l * 0.25, 3 * pxPerM())), tm = P(0, -b.l / 2); if (rq) out.push({ kind: 'rot', ...rq, tm });
@@ -2622,13 +2790,13 @@ function drawHandles3(ctx, ci) {
     else { ctx.fillRect(h.x - 5, h.y - 5, 10, 10); ctx.strokeRect(h.x - 5, h.y - 5, 10, 10); }
   }
 }
-function enter3D() {
+function enter3D(flat) {
   if (S.view3d) return true;
   if (!S.clean || !initGL()) return false;
   if (S.mode !== 'select') setMode('select');
   const c = toW({ x: CW / 2, y: CH / 2 });
-  Object.assign(G.cam, { tx: c.x, tz: c.y, dist: (CH / V.s) / 2 / Math.tan(G.fov / 2) });
-  if (!G.camSet) { G.cam.yaw = 0; G.cam.pitch = 0; }
+  Object.assign(G.cam, { tx: c.x, tz: c.y, dist: (CH / V.s) / 2 / Math.tan(G.fov / 2), yaw: -V.rot });
+  if (!G.camSet || flat) G.cam.pitch = 0;
   G.camSet = true;
   setView3d(true);
   status('Vue 3D : Maj + glisser = pivoter / incliner · glisser = déplacer la vue ou l\'immeuble · molette = zoom · clic droit = hauteur d\'une construction.', true);
@@ -2636,9 +2804,10 @@ function enter3D() {
 }
 function exit3D() {
   if (!S.view3d) return;
+  G.cam.pitch = 0;
   const s = CH / (2 * G.cam.dist * Math.tan(G.fov / 2));
-  V.s = s; V.ox = CW / 2 - G.cam.tx * s; V.oy = CH / 2 - G.cam.tz * s;
   setView3d(false);
+  setView(G.cam.tx, G.cam.tz, s, -G.cam.yaw);
 }
 function setView3d(on) {
   S.view3d = on;
@@ -2678,12 +2847,12 @@ glcv.addEventListener('pointerdown', e => {
   }
   const hit = pick3(p.x, p.y), g = ground3(p.x, p.y);
   if (hit && hit.kind === 'proj') {
-    selectBuilding(hit.bi); S.edit3d = true;
+    if (hit.bi !== S.sel) { S.editB = false; selectBuilding(hit.bi); }
     const y = projTop(S.building), w = planeHit(p.x, p.y, y);
     if (w) { drag3 = { type: 'move3', y, w0: w, cx: S.building.cx, cy: S.building.cy }; glcv.style.cursor = 'move'; }
     S.dirty = true; return;
   }
-  S.edit3d = false; S.dirty = true;
+  S.editB = false; S.dirty = true;
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
@@ -2696,7 +2865,8 @@ glcv.addEventListener('pointermove', e => {
   if (drag3.type === 'dial') return dialMove(drag3, p);
   if (drag3.type === 'orbit') {
     const dx = e.clientX - drag3.lx, dy = e.clientY - drag3.ly; drag3.lx = e.clientX; drag3.ly = e.clientY;
-    if (drag3.right && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 4) return;
+    if (drag3.right && !drag3.moved && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 6) return;
+    if (!drag3.moved) closePop();
     drag3.moved = true;
     G.cam.yaw = mod(G.cam.yaw + dx * 0.006 + Math.PI, 2 * Math.PI) - Math.PI;
     G.cam.pitch = clamp(G.cam.pitch - dy * 0.006, 0, 80 * D2R);
@@ -2724,12 +2894,28 @@ glcv.addEventListener('pointermove', e => {
 });
 glcv.addEventListener('pointerup', e => {
   if (drag3 && drag3.type === 'dial') { dialUp(drag3); drag3 = null; return; }
-  if (drag3 && drag3.right && !drag3.moved) { const p = ev3(e), hit = pick3(p.x, p.y); if (hit && hit.kind === 'proj') { selectBuilding(hit.bi); S.edit3d = true; } heightPopupFor(hit, e.clientX, e.clientY); }
-  drag3 = null; glcv.style.cursor = 'default'; changed();
+  if (drag3 && drag3.right && !drag3.moved) context3D(ev3(e), e.clientX, e.clientY);
+  const wasOrbit = drag3 && drag3.type === 'orbit' && drag3.moved;
+  drag3 = null; glcv.style.cursor = 'default';
+  if (wasOrbit && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D, même orientation
+  changed();
 });
+glcv.addEventListener('dblclick', e => {
+  const p = ev3(e), hit = pick3(p.x, p.y);
+  if (hit && hit.kind === 'proj') { selectBuilding(hit.bi); S.editB = true; S.dirty = true; }
+});
+function context3D(p, cx, cy) {
+  const dk = dialHit(p); if (dk) return menuDial(dk, cx, cy);
+  const hit = pick3(p.x, p.y, true);
+  if (!hit) return menuBg(cx, cy);
+  if (hit.kind === 'proj') { selectBuilding(hit.bi); return menuProj(S.building, hit.part, cx, cy); }
+  if (hit.kind === 'nb') return menuNb(hit.c, cx, cy);
+  if (hit.kind === 'tree') return menuTree(hit.t, cx, cy);
+  menuBg(cx, cy);
+}
 glcv.addEventListener('wheel', e => {
   e.preventDefault();
-  if (dialHit(ev3(e)) === 'sundial') { if (Math.abs(normWheel(e)) >= 4) dialWheel(normWheel(e) < 0 ? 1 : -1); return; }
+  { const dk = dialHit(ev3(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
   const nd = clamp(G.cam.dist * f, 5, 1e6), k = nd / G.cam.dist;
   if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
@@ -2737,7 +2923,7 @@ glcv.addEventListener('wheel', e => {
 }, { passive: false });
 $('v2d').onclick = exit3D;
 $('v3d').onclick = enter3D;
-$('btnTop').onclick = () => { G.cam.yaw = 0; G.cam.pitch = 0; S.dirty = true; };
+$('btnTop').onclick = () => { G.cam.pitch = 0; exit3D(); };
 function snapshot3d() {
   draw3d();
   const c = document.createElement('canvas'); c.width = glcv.width; c.height = glcv.height;
