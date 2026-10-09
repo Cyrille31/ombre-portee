@@ -14,6 +14,7 @@ Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la 
 - le **fond de plan** (plan IGN, photo aérienne ou cadastre), à l'échelle exacte, nord en haut ;
 - les **bâtiments** de la BD TOPO, avec leur contour exact, leur hauteur et l'altitude de leur pied ;
 - le **relief** : modèle de terrain LiDAR HD au demi-mètre, complété par le RGE ALTI là où le LiDAR manque.
+- les **arbres** (option) : hauteur de la végétation = modèle de surface LiDAR HD − terrain, hors bâtiments. Ils portent et reçoivent les ombres en 3D ; la case « Arbres » du bloc Affichage les masque.
 
 La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (rectangle vert, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
