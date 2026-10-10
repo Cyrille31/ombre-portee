@@ -1873,6 +1873,7 @@ function menuProj(b, part, cx, cy) {
 }
 function menuBg(cx, cy, P) {
   openMenu(cx, cy, 'Fond', m => {
+    m.button('🏢 Dessiner un nouvel immeuble', () => { closePop(); if (S.view3d) exit3D(); setMode('draw'); status('Nouvel immeuble : glisser sur le plan pour tracer son rectangle.', true); });
     if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
     m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
     m.range('Contraste', () => S.contrast, v => S.contrast = v, 40, 200, 5, v => v + ' %');
@@ -2966,11 +2967,38 @@ function hiddenPt(eye, P, T, tol) {
   }
   return false;
 }
-/** Segment 3D A → B découpé en morceaux visibles / cachés : [[t0, t1, caché], …]. */
-function edgeVis(eye, A, B, T, tol, n = 14) {
+/** Le point P est-il caché depuis l'œil par la végétation (arbres isolés, canopée) ? Marche le long du rayon. */
+function vegIndex() {
+  const V = S.veg; if (!V || !S.showTrees) return null;
+  if (G.vegIdx && G.vegIdx.V === V && G.vegIdx.ver === S.vegVer) return G.vegIdx;
+  const cs = 10, grid = new Map(); let top = 0;
+  for (const t of V.trees || []) { top = Math.max(top, t.H); for (let i = Math.floor((t.x - t.R) / cs); i <= Math.floor((t.x + t.R) / cs); i++) for (let j = Math.floor((t.y - t.R) / cs); j <= Math.floor((t.y + t.R) / cs); j++) { const k = i + ',' + j; (grid.get(k) || grid.set(k, []).get(k)).push(t); } }
+  if (V.h) for (const h of V.h) if (h > top) top = h;
+  return G.vegIdx = { V, ver: S.vegVer, cs, grid, top };
+}
+function hiddenByVeg(eye, P) {
+  const I = vegIndex(); if (!I) return false;
+  const V = I.V, ppm = pxPerM(), d = v3.sub(eye, P), L = Math.hypot(...d) / ppm, u = v3.mul(d, 1 / (L * ppm));   // m
+  const p0 = [P[0] / ppm, P[1] / ppm, P[2] / ppm], st = 0.5;
+  for (let s = 0.6; s < Math.min(L, 400); s += st) {
+    const x = p0[0] + u[0] * s, y = p0[1] + u[1] * s, z = p0[2] + u[2] * s, g = terrainAt(x * ppm, z * ppm);
+    if (y - g > I.top + 0.5) { if (u[1] > 0) break; else continue; }
+    if (V.h) { const i = Math.floor(x / V.cell), j = Math.floor(z / V.cell); if (i >= 0 && j >= 0 && i < V.nx && j < V.ny) { const hv = V.h[j * V.nx + i]; if (hv > 0 && y - g < hv) return true; } }
+    for (const t of I.grid.get(Math.floor(x / I.cs) + ',' + Math.floor(z / I.cs)) || []) {
+      const r = Math.hypot(x - t.x, z - t.y); if (r > t.R) continue;
+      const cf = clamp(treeCB(t) / t.H, 0.03, 0.85), f = (y - (terrainAt(t.x * ppm, t.y * ppm) - 0.3)) / t.H; if (f < cf || f > 1) continue;
+      const f0 = 0.25 + (f - cf) * 0.75 / (1 - cf); let q = 0;   // profil du houppier (TREE_PROF), recalé sur le bas du feuillage
+      for (let k = 0; k + 1 < TREE_PROF.length; k++) { const [a, qa] = TREE_PROF[k], [b, qb] = TREE_PROF[k + 1]; if (f0 >= a && f0 <= b) { q = qa + (qb - qa) * (f0 - a) / (b - a); break; } }
+      if (r < q * t.R) return true;
+    }
+  }
+  return false;
+}
+/** Segment 3D A → B découpé en morceaux visibles / cachés : [[t0, t1, caché], …] (caché : 1 par l'immeuble, 2 par les arbres). */
+function edgeVis(eye, A, B, T, tol, n = 24) {
   const out = []; let cur = null;
   for (let k = 0; k < n; k++) {
-    const t = (k + 0.5) / n, h = hiddenPt(eye, [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t], T, tol);
+    const t = (k + 0.5) / n, Q = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t], h = hiddenPt(eye, Q, T, tol) ? 1 : hiddenByVeg(eye, Q) ? 2 : 0;
     if (cur && cur[2] === h) cur[1] = (k + 1) / n; else { cur = [k / n, (k + 1) / n, h]; out.push(cur); }
   }
   return out;
@@ -2982,11 +3010,13 @@ function strokeRoofEdges3(ctx, ci, b, T, style) {
   R.e.forEach(([i, j, bd], ei) => {
     if (!style.all && bd === 1) return;
     for (const [t0, t1, h] of edgeVis(ci.eye, W[i], W[j], T, tol)) {
-      if (h && !style.dash) continue;
+      const veg = h === 2, ta = S.treeT / 100;   // derrière un arbre : seulement à travers sa transparence
+      if (veg && ta < 0.05) continue;
+      if (h === 1 && !style.dash) continue;
       const P = t => toScreen3(ci.VP, [W[i][0] + (W[j][0] - W[i][0]) * t, W[i][1] + (W[j][1] - W[i][1]) * t, W[i][2] + (W[j][2] - W[i][2]) * t]);
       const a = P(t0), c = P(t1); if (!a || !c) continue;
       if (style.halo && style.halo[ei] && !h) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
-      ctx.setLineDash(h ? [4, 4] : []); ctx.globalAlpha = h ? 0.75 : 1;
+      ctx.setLineDash(h && style.dash ? [4, 4] : []); ctx.globalAlpha = veg ? ta * (style.dash ? 0.9 : 1) : h ? 0.75 : 1;
       ctx.strokeStyle = style.col(bd, ei); ctx.lineWidth = h ? 1.5 : style.w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
