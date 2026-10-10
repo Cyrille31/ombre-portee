@@ -331,7 +331,7 @@ const S = {
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
   traj: [], scenario: [], showScenario: true, showCurrent: true,
-  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: false, showTrees: true, showProj: true, showProjShadow: true, nbFac: 0,
+  opacity: 0.45, showOrig: true, showDims: true, showNbLbl: false, showTrees: true, showProj: true, showProjShadow: true, nbFac: 1,
   mode: 'select', temp: null, playing: false, playSpeed: 60,
   dirty: true
 };
@@ -342,7 +342,7 @@ function setView(cx, cy, s, rot = V.rot) { const c = Math.cos(rot), sn = Math.si
 let bidSeq = 0;
 S.buildings = []; S.sel = -1; S._h = 15; S._dz = 0;
 const ROOF_COL = '#40c766', WALL_COL = '#16a34a';
-function normB(v) { return { id: v.id || ++bidSeq, cx: v.cx, cy: v.cy, w: v.w, l: v.l, a: v.a || 0, h: v.h !== undefined ? v.h : S._h, dz: 0, roofCol: v.roofCol || ROOF_COL, wallCol: v.wallCol || WALL_COL, fac: v.fac || 0, roofE: v.roofE ? JSON.parse(JSON.stringify(v.roofE)) : undefined }; }
+function normB(v) { return { id: v.id || ++bidSeq, cx: v.cx, cy: v.cy, w: v.w, l: v.l, a: v.a || 0, h: v.h !== undefined ? v.h : S._h, dz: 0, roofCol: v.roofCol || ROOF_COL, wallCol: v.wallCol || WALL_COL, fac: v.fac !== undefined ? v.fac : 1, roofE: v.roofE ? JSON.parse(JSON.stringify(v.roofE)) : undefined }; }
 Object.defineProperties(S, {
   building: { configurable: true, get() { return this.buildings[this.sel] || null; }, set(v) { this.buildings = v ? [normB(v)] : []; this.sel = v ? 0 : -1; } },
   height: { configurable: true, get() { const b = this.building; return b ? b.h : this._h; }, set(v) { const b = this.building; if (b) b.h = v; this._h = v; } },
