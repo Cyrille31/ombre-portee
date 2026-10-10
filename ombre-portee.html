@@ -45,6 +45,9 @@ input[type=range]{width:100%}
 .hint{color:var(--muted);font-size:11.5px}
 body.noaide .aide{display:none!important}
 #btnPlay{min-width:84px}
+#errBox{position:fixed;left:50%;transform:translateX(-50%);bottom:34px;z-index:30;max-width:640px;background:#fff7ed;border:1px solid #f59e0b;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:8px 12px}
+#errBox .t{font-weight:600;color:#9a3412}
+#errMsg{white-space:pre-wrap;max-height:120px;overflow:auto;margin:4px 0;font-family:ui-monospace,monospace;font-size:11px}
 #clockBox{position:absolute;z-index:4;background:rgba(255,255,255,0.95);border:1px solid #9aa7bd;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:6px 6px;text-align:center;width:124px}
 #cbDate{font-size:17px;font-weight:600;color:#334}
 #cbTime{font-size:26px;font-weight:700;color:#223;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -275,6 +278,12 @@ input.big{font-size:18px;font-weight:600;width:90px}
   <h1 id="printTitle">Étude d'ombre portée</h1>
   <div id="printInfo"></div>
   <img id="printImg" alt="">
+</div>
+<div id="errBox" hidden>
+  <div class="t" id="errT">Une erreur s'est produite</div>
+  <div id="errMsg" class="hint"></div>
+  <div class="row"><button id="errCopy" class="on small">Copier le rapport</button><button id="errSave" class="small">Enregistrer un projet de secours</button><button id="errClose" class="small">Fermer</button></div>
+  <div class="hint">Le logiciel continue de fonctionner. Collez le rapport dans votre message pour que l'erreur soit corrigée.</div>
 </div>
 <div id="hPop" class="pop" hidden></div>
 <input type="file" id="fileIn" accept="image/*,.pdf,.json,application/pdf" hidden>
@@ -1112,6 +1121,7 @@ cv.addEventListener('pointermove', e => {
   const p = evPos(e), w = toW(p);
   if (S.temp && !drag && S.mode === 'scale') { S.temp.p2 = w; S.dirty = true; }
   if (!drag && S.ruler && S.ruler.live) { S.ruler.b = w; S.dirty = true; }
+  if (!drag && S.roofEdit) roofHover(p);
   if (!drag) { if (S.clean && dialHit(p)) { cv.style.cursor = 'pointer'; return; } if (S.clean && siteHit(p)) { cv.style.cursor = 'move'; return; } if (S.clean) { const h = hitTest(p); cv.style.cursor = S.mode === 'select' || S.mode === 'traj' ? (!h && S.mode === 'select' && nbAt(w.x, w.y) ? 'context-menu' : cursorFor(h)) : 'crosshair'; } return; }
   const b = S.building;
   if (drag.type === 'dial') return dialMove(drag, p);
@@ -1189,6 +1199,7 @@ function finishScale() {
   setMode('select'); changed();
 }
 function setMode(m) {
+  actLog('Mode : ' + m);
   S.mode = m; S.temp = null;
   $('mSelect').classList.toggle('on', m === 'select'); $('mTraj').classList.toggle('on', m === 'traj'); $('mScale').classList.toggle('on', m === 'scale');
   $('btnTraj').classList.toggle('on', m === 'traj'); $('btnDraw').classList.toggle('on', m === 'draw'); $('btnScale').classList.toggle('on', m === 'scale');
@@ -1510,9 +1521,8 @@ async function saveBlob(blob, name, desc, mime, ext) {
 }
 const canvasBlob = c => new Promise(r => c.toBlob(r, 'image/png'));
 $('btnSaveProj').title = 'Enregistre le plan et tous les réglages (vue 2D/3D, hauteurs des constructions, lieu, scénarios…) pour les rouvrir plus tard';
-$('btnSaveProj').onclick = async () => {
-  if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
-  const p = {
+function projectData() {
+  return {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
@@ -1520,7 +1530,12 @@ $('btnSaveProj').onclick = async () => {
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
-  await saveBlob(new Blob([JSON.stringify(p, (k, v) => k[0] === '_' ? undefined : v)], { type: 'application/json' }), S.fileName + '.ombre.json', 'Projet Ombre portée', 'application/json', '.json');
+}
+const projectJSON = () => JSON.stringify(projectData(), (k, v) => k[0] === '_' ? undefined : v);
+$('btnSaveProj').onclick = async () => {
+  if (!S.orig) return alert('Rien à enregistrer : ouvrez d\'abord un plan.');
+  actLog('Enregistrement du projet');
+  await saveBlob(new Blob([projectJSON()], { type: 'application/json' }), S.fileName + '.ombre.json', 'Projet Ombre portée', 'application/json', '.json');
 };
 async function loadProject(p) {
   if (!p || p.app !== 'ombre-portee' || !p.image) throw new Error('Ce fichier n\'est pas un projet Ombre portée.');
@@ -1755,11 +1770,11 @@ const savedHeights = () => NB ? NB.list.filter(c => c.h !== undefined).map(c => 
 
 /* ------------------------------------------------ Menus du clic droit */
 const hPop = $('hPop'); let popOpen = false;
-function closePop() { hPop.hidden = true; popOpen = false; hPop.innerHTML = ''; }
+function closePop() { const f = hPop._onClose; hPop._onClose = null; hPop.hidden = true; popOpen = false; hPop.innerHTML = ''; if (f) try { f(); } catch (e) { reportError(e, 'menu'); } }
 const mk = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; };
 /** Ouvre une petite fenêtre près du pointeur ; build(api) y ajoute des réglages (appliqués aussitôt). */
 function openMenu(cx, cy, title, build) {
-  closePop(); hPop.append(mk('div', 't', title));
+  closePop(); actLog('Menu : ' + title); hPop.append(mk('div', 't', title));
   const refresh = [];
   const api = {
     num(label, get, set, o = {}) {
@@ -1794,6 +1809,7 @@ function openMenu(cx, cy, title, build) {
     },
     button(label, fn) { const b = mk('button', 'small', label); b.onclick = () => { fn(); changed(); }; let row = hPop.lastChild; if (!row || !row.classList.contains('btns')) { row = mk('div', 'row btns'); hPop.append(row); } row.append(b); },
     hint(t) { hPop.append(mk('div', 'hint', t)); },
+    onClose(fn) { hPop._onClose = fn; },
     sep() { hPop.append(mk('div', 'sep')); }
   };
   build(api);
@@ -2153,6 +2169,7 @@ async function loadSite() {
 }
 /** Charge le rectangle bb (Lambert-93, m) : g = adresse { label, lon, lat, x, y }. */
 async function loadSiteRect(g, bb, keepView) {
+  actLog('Chargement du site ' + g.label + ' ' + bb.map(v => Math.round(v)).join(','));
   const bg = S.bgMode;
   const vKeep = keepView ? { cam: { ...G.cam }, v: toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot, x0: S.site.x0, y1: S.site.y1, ppm: pxPerM() } : null;
   {
@@ -2230,7 +2247,7 @@ async function loadSiteRect(g, bb, keepView) {
   }
 }
 $('btnSite').onclick = loadSite;
-const canvasURL = (c, jpg) => c.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.88);
+const canvasURL = (c, jpg) => { const k = jpg ? '_uj' : '_up'; if (c[k] && c._uw === c.width) return c[k]; c._uw = c.width; return c[k] = c.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.88); };
 $('addr').addEventListener('keydown', e => { if (e.key === 'Enter') loadSite(); e.stopPropagation(); });
 // enregistrement : relief en base64 (Float32), bâtiments en coordonnées du plan
 function f32ToB64(a) { const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
@@ -2465,10 +2482,42 @@ function roofFaces(b) {
       const l = adj[c], k = l.indexOf(a), nx = l[(k - 1 + l.length) % l.length]; a = c; c = nx;
     }
     let ar = 0; loop.forEach((v, k) => { const p = P[v], q = P[loop[(k + 1) % loop.length]]; ar += p.x * q.y - q.x * p.y; });
-    if (ar > 1e-6) faces.push(loop);
+    // pan entièrement bordé de lignes « côté reste » d'un décrochement : c'est l'emplacement du pan décroché (trou)
+    const hole = loop.every((v, k) => { const w = loop[(k + 1) % loop.length], e = R.e.find(([i, j]) => (i === v && j === w) || (i === w && j === v)); return e && e[2] === 3; });
+    if (ar > 1e-6 && !hole) faces.push(loop);
   }
   R._f = faces; R._fv = R.ver; return faces;
 }
+/** Composante (toit indépendant) de chaque sommet. */
+function roofComps(b) {
+  const R = b.roofE; if (R._cv === R.ver) return R._c;
+  const par = R.n.map((_, i) => i), f = i => par[i] === i ? i : (par[i] = f(par[i]));
+  for (const [i, j] of R.e) par[f(i)] = f(j);
+  R._c = R.n.map((_, i) => f(i)); R._cv = R.ver; return R._c;
+}
+/** Sommets confondus (décrochements) et choix du bon côté. */
+const sameUV = (A, B) => Math.abs(A.u - B.u) < 1e-6 && Math.abs(A.v - B.v) < 1e-6;
+function roofClean(b) {
+  // retire les sommets qui ne sont l'extrémité d'aucune ligne : isolés, ou au milieu d'une ligne droite
+  const R = b.roofE; let ch = true;
+  while (ch) {
+    ch = false;
+    const inc = R.n.map(() => []); R.e.forEach((e, k) => { inc[e[0]].push(k); inc[e[1]].push(k); });
+    for (let k = 0; k < R.n.length && !ch; k++) {
+      if (inc[k].length === 0) { delNode(R, k); ch = true; break; }
+      if (inc[k].length !== 2) continue;
+      const [e1, e2] = inc[k].map(x => R.e[x]); if (e1[2] !== e2[2]) continue;
+      const a = e1[0] === k ? e1[1] : e1[0], c = e2[0] === k ? e2[1] : e2[0];
+      const A = rmx(b, R.n[a]), C = rmx(b, R.n[c]), K = rmx(b, R.n[k]), L = dist(A, C);
+      if (L < 1e-9 || Math.abs((C.x - A.x) * (K.y - A.y) - (C.y - A.y) * (K.x - A.x)) / L > 0.01) continue;
+      const t = dist(A, K) / L; if (Math.abs(R.n[a].d + (R.n[c].d - R.n[a].d) * t - R.n[k].d) > 0.01) continue;   // point de cassure : gardé
+      if (R.e.some(([i, j]) => (i === a && j === c) || (i === c && j === a))) continue;
+      const bd = e1[2]; R.e = R.e.filter((_, x) => x !== inc[k][0] && x !== inc[k][1]); R.e.push([a, c, bd]); delNode(R, k); ch = true;
+    }
+  }
+  R.ver++;
+}
+function delNode(R, k) { R.n.splice(k, 1); R.e = R.e.map(([i, j, bd]) => [i > k ? i - 1 : i, j > k ? j - 1 : j, bd]); }
 /** Contour sans « éperons » (lignes qui s'arrêtent au milieu d'un pan). */
 function unspike(loop) {
   let L = loop.slice(), ch = true;
@@ -2532,16 +2581,20 @@ function segX(p, q, a, c) {   // intersection des segments pq et ac : paramètre
 }
 /** Trace une ligne de A à B : coupe les segments croisés, crée les sommets nécessaires. */
 function roofAddLine(b, A, B) {
-  const R = b.roofE, uvB = reUV(b, B), ia = roofNodeAt(b, A), ib = roofNodeAt(b, B.k !== undefined ? B : snapRoof(b, uvB, 0.02)); if (ia === ib) return;
+  const R = b.roofE, uvB = reUV(b, B), ia = roofNodeAt(b, A), ib = roofNodeAt(b, B.k !== undefined ? B : snapRoof(b, uvB, 0.02, roofComps(b)[ia])); if (ia === ib) return;
+  const isolated = k => !R.e.some(([i, j]) => i === k || j === k);
+  const compOf = k => { if (!isolated(k)) return roofComps(b)[k]; const fk = roofFaceAt(b, R.n[k].u, R.n[k].v); return fk >= 0 ? roofComps(b)[roofFaces(b)[fk][0]] : roofComps(b)[ia]; };
+  if (compOf(ia) !== compOf(ib)) { status('Une ligne ne peut pas relier deux parties décrochées du toit.', true); roofClean(b); return; }
+  const comp = compOf(ia);
   const pa = rmx(b, R.n[ia]), pb = rmx(b, R.n[ib]), cuts = [];
   for (let ei = 0; ei < R.e.length; ei++) {
-    const [i, j] = R.e[ei]; if (i === ia || j === ia || i === ib || j === ib) continue;
+    const [i, j] = R.e[ei]; if (i === ia || j === ia || i === ib || j === ib || roofComps(b)[i] !== comp) continue;
     const x = segX(pa, pb, rmx(b, R.n[i]), rmx(b, R.n[j]));
     if (x && x.t > 1e-4 && x.t < 1 - 1e-4 && x.s > 1e-4 && x.s < 1 - 1e-4) cuts.push({ t: x.t, i, j, s: x.s });
   }
   // sommets déjà situés sur la ligne
   R.n.forEach((nd, k) => {
-    if (k === ia || k === ib) return; const p = rmx(b, nd), L2 = (pb.x - pa.x) ** 2 + (pb.y - pa.y) ** 2;
+    if (k === ia || k === ib || roofComps(b)[k] !== comp) return; const p = rmx(b, nd), L2 = (pb.x - pa.x) ** 2 + (pb.y - pa.y) ** 2;
     const t = ((p.x - pa.x) * (pb.x - pa.x) + (p.y - pa.y) * (pb.y - pa.y)) / L2, dd = Math.hypot(pa.x + (pb.x - pa.x) * t - p.x, pa.y + (pb.y - pa.y) * t - p.y);
     if (t > 1e-4 && t < 1 - 1e-4 && dd < 0.02) cuts.push({ t, k });
   });
@@ -2557,38 +2610,47 @@ function roofAddLine(b, A, B) {
     const i = chain[k], j = chain[k + 1];
     if (i !== j && !R.e.some(([a, c]) => (a === i && c === j) || (a === j && c === i))) R.e.push([i, j, 0]);
   }
-  R.ver++;
+  R.ver++; roofClean(b);
 }
-function roofDelEdge(b, ei) {
-  const R = b.roofE; if (R.e[ei][2]) return;
-  R.e.splice(ei, 1);
-  // sommets isolés retirés (renumérotation)
-  const deg = R.n.map(() => 0); for (const [i, j] of R.e) { deg[i]++; deg[j]++; }
-  const keep = R.n.map((_, k) => deg[k] > 0), map = []; let q = 0;
-  R.n = R.n.filter((_, k) => { map[k] = q; if (keep[k]) q++; return keep[k]; });
-  R.e = R.e.map(([i, j, bd]) => [map[i], map[j], bd]); R.ver++;
+function roofDelEdge(b, ei) { const R = b.roofE; if (R.e[ei][2]) return; R.e.splice(ei, 1); R.ver++; roofClean(b); }
+/** Suppression d'un point : extrémité d'une ligne en attente, ou point au milieu d'une ligne droite. */
+function roofNodeDeletable(b, k) {
+  const R = b.roofE, inc = R.e.filter(([i, j]) => i === k || j === k);
+  if (inc.length === 1) return !inc[0][2];
+  if (inc.length !== 2 || inc[0][2] !== inc[1][2]) return false;
+  const a = inc[0][0] === k ? inc[0][1] : inc[0][0], c = inc[1][0] === k ? inc[1][1] : inc[1][0], A = rmx(b, R.n[a]), C = rmx(b, R.n[c]), K = rmx(b, R.n[k]);
+  return Math.abs((C.x - A.x) * (K.y - A.y) - (C.y - A.y) * (K.x - A.x)) / (dist(A, C) || 1) < 0.01;
 }
-/** Décrochement : deux lignes très proches traversant le pan, parallèles à la longueur (dir 0) ou à la largeur (dir 1). */
-function roofStep(b, u, v, dir) {
-  const k = roofFaceAt(b, u, v); if (k < 0) return;
-  const f = unspike(roofFaces(b)[k]), poly = f.map(i => b.roofE.n[i]), off = 0.12 / (dir ? b.w / pxPerM() : b.l / pxPerM());
-  for (const o of [-off, off]) {
-    const p = dir ? { u: u + o, v: -0.6 } : { u: -0.6, v: v + o }, q = dir ? { u: u + o, v: 0.6 } : { u: 0.6, v: v + o };
-    const hits = [];
-    poly.forEach((A, i) => { const B = poly[(i + 1) % poly.length], x = segX({ x: p.u, y: p.v }, { x: q.u, y: q.v }, { x: A.u, y: A.v }, { x: B.u, y: B.v }); if (x && x.s >= 0 && x.s <= 1 && x.t >= 0 && x.t <= 1) hits.push({ t: x.t, u: p.u + (q.u - p.u) * x.t, v: p.v + (q.v - p.v) * x.t }); });
-    hits.sort((a, c) => a.t - c.t);
-    const tc = dir ? (v + 0.6) / 1.2 : (u + 0.6) / 1.2;
-    let a = null, c = null; for (const h of hits) { if (h.t <= tc) a = h; else if (!c) c = h; }
-    if (a && c) roofAddLine(b, snapRoof(b, a), snapRoof(b, c));
+function roofDelNode(b, k) {
+  const R = b.roofE, inc = R.e.map((e, x) => [e, x]).filter(([[i, j]]) => i === k || j === k);
+  if (inc.length === 1) R.e.splice(inc[0][1], 1);
+  else if (inc.length === 2) { const [[e1], [e2]] = inc, a = e1[0] === k ? e1[1] : e1[0], c = e2[0] === k ? e2[1] : e2[0]; R.e = R.e.filter((_, x) => x !== inc[0][1] && x !== inc[1][1]); if (!R.e.some(([i, j]) => (i === a && j === c) || (i === c && j === a))) R.e.push([a, c, e1[2]]); }
+  R.ver++; roofClean(b);
+}
+/** Décrochement : le pan devient un toit indépendant (sommets dédoublés), relié au reste par un mur vertical. */
+function roofDetach(b, fk) {
+  const R = b.roofE, F = roofFaces(b), f = F[fk]; if (!f) return false;
+  const dir = new Map(); F.forEach((g, gi) => g.forEach((v, k) => { const w = g[(k + 1) % g.length]; dir.set(v + ',' + w, gi); }));
+  const fEdges = new Set(); f.forEach((v, k) => { const w = f[(k + 1) % f.length], ei = R.e.findIndex(([i, j]) => (i === v && j === w) || (i === w && j === v)); if (ei >= 0) fEdges.add(ei); });
+  const shared = ei => { const [i, j] = R.e[ei], a = dir.get(i + ',' + j), c = dir.get(j + ',' + i); return a !== undefined && c !== undefined && a !== c; };
+  if (![...fEdges].some(shared)) return false;   // déjà indépendant
+  const nodes = new Set(f), dup = new Map();
+  for (const v of nodes) if (R.e.some(([i, j], ei) => (i === v || j === v) && !fEdges.has(ei))) { R.n.push({ ...R.n[v] }); dup.set(v, R.n.length - 1); }
+  const m = v => dup.has(v) ? dup.get(v) : v;
+  for (const ei of fEdges) {
+    const [i, j, bd] = R.e[ei];
+    if (shared(ei)) { R.e[ei] = [i, j, 3]; R.e.push([m(i), m(j), 2]); }   // ligne dédoublée : côté reste (3), côté pan décroché (2)
+    else R.e[ei] = [m(i), m(j), bd];                                      // bord du toit ou ligne propre au pan
   }
+  R.ver++; return true;
 }
 /** Point (u, v) accroché au sommet ou au segment le plus proche (en m). */
-function snapRoof(b, P, tol = 0.05) {
-  const R = b.roofE, p = rmx(b, P);
-  let bk = -1, bd = tol; R.n.forEach((nd, k) => { const d = dist(rmx(b, nd), p); if (d < bd) { bd = d; bk = k; } });
+function snapRoof(b, P, tol = 0.05, comp) {
+  const R = b.roofE, p = rmx(b, P), cc = comp !== undefined ? roofComps(b) : null, ok = k => !cc || cc[k] === comp;
+  let bk = -1, bd = tol; R.n.forEach((nd, k) => { const d = dist(rmx(b, nd), p); if (ok(k) && d < bd) { bd = d; bk = k; } });
   if (bk >= 0) return { k: bk };
   let be = -1, bs = 0; bd = tol;
-  R.e.forEach(([i, j], ei) => { const A = rmx(b, R.n[i]), B = rmx(b, R.n[j]), L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2, t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1), d = Math.hypot(A.x + (B.x - A.x) * t - p.x, A.y + (B.y - A.y) * t - p.y); if (d < bd) { bd = d; be = ei; bs = t; } });
+  R.e.forEach(([i, j], ei) => { if (!ok(i)) return; const A = rmx(b, R.n[i]), B = rmx(b, R.n[j]), L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2, t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1), d = Math.hypot(A.x + (B.x - A.x) * t - p.x, A.y + (B.y - A.y) * t - p.y); if (d < bd) { bd = d; be = ei; bs = t; } });
   if (be >= 0) return { e: be, s: bs };
   return { u: P.u, v: P.v };
 }
@@ -2631,6 +2693,16 @@ function buildingGeo(g, b, foot, gr, ppm) {
     const horiz = Math.abs(A.v - B.v) < 1e-6, sa = horiz ? (A.u + 0.5) * b.w / ppm : (A.v + 0.5) * b.l / ppm, sb = horiz ? (B.u + 0.5) * b.w / ppm : (B.v + 0.5) * b.l / ppm;
     side(pa, pb, sa, sb, gr, gr, rz(b, A), rz(b, B));
   }
+  for (const [i, j, bd] of R.e) {   // mur vertical d'un décrochement, entre le pan décroché et le reste
+    if (bd !== 2) continue;
+    const A = R.n[i], B = R.n[j], tw = R.e.find(([a, c, t]) => t === 3 && ((sameUV(R.n[a], A) && sameUV(R.n[c], B)) || (sameUV(R.n[a], B) && sameUV(R.n[c], A))));
+    let za = rz(b, A), zb = rz(b, B), ya = 0, yb = 0;
+    if (tw) { const [a, c] = tw, nA = sameUV(R.n[a], A) ? R.n[a] : R.n[c], nB = nA === R.n[a] ? R.n[c] : R.n[a]; ya = rz(b, nA); yb = rz(b, nB); }
+    const pa = rWorld(b, A), pb = rWorld(b, B), lo = (y1, y2) => foot + Math.min(y1, y2) * ppm, hi = (y1, y2) => Math.max(y1, y2);
+    const dx = pb.x - pa.x, dy = pb.y - pa.y, L = Math.hypot(dx, dy) || 1, s1 = L / ppm;
+    g.wall([pa.x, tw ? lo(za, ya) : gr, pa.y], [pb.x, tw ? lo(zb, yb) : gr, pb.y], [pb.x, foot + hi(zb, yb) * ppm, pb.y], [pa.x, foot + hi(za, ya) * ppm, pa.y], [-dy / L, 0, dx / L], wall,
+      [[0, tw ? Math.min(za, ya) : 0], [s1, tw ? Math.min(zb, yb) : 0], [s1, hi(zb, yb)], [0, hi(za, ya)]], fac);
+  }
   for (const f of roofFaces(b)) {
     const L = unspike(f); if (L.length < 3) continue;
     const pts = L.map(i => rmx(b, R.n[i])), tri = earClip(pts);
@@ -2668,12 +2740,17 @@ function reLocal(b, p) {
 /** Élément du toit sous le pointeur : sommet, segment ou intérieur. */
 function reHit(b, p) {
   const R = b.roofE, ci = S.view3d ? camInfo() : null, sc = R.n.map(nd => reScreen(b, nd, ci));
-  let bk = -1, bd = 9; sc.forEach((q, k) => { if (q) { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd) { bd = d; bk = k; } } });
+  let bk = -1, bd = 12;
+  sc.forEach((q, k) => { if (!q) return; const d = Math.hypot(q.x - p.x, q.y - p.y); if (d < bd - 0.5 || (bk >= 0 && Math.abs(d - bd) <= 0.5 && rz(b, R.n[k]) > rz(b, R.n[bk]))) { bd = Math.min(bd, d); bk = k; } });
   if (bk >= 0) return { k: bk };
-  let be = -1, bs = 0; bd = 6;
-  R.e.forEach(([i, j], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return; const L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1, t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1), d = Math.hypot(A.x + (B.x - A.x) * t - p.x, A.y + (B.y - A.y) * t - p.y); if (d < bd) { bd = d; be = ei; bs = t; } });
-  if (be >= 0) return { e: be, s: bs };
-  const l = reLocal(b, p); if (l && Math.abs(l.u) <= 0.5 && Math.abs(l.v) <= 0.5) return { in: true, u: l.u, v: l.v };
+  let be = -1; bd = 9;
+  R.e.forEach(([i, j], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return; const L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1, t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1), d = Math.hypot(A.x + (B.x - A.x) * t - p.x, A.y + (B.y - A.y) * t - p.y); if (d < bd - 0.5 || (be >= 0 && Math.abs(d - bd) <= 0.5 && rz(b, R.n[i]) > rz(b, R.n[R.e[be][0]]))) { bd = Math.min(bd, d); be = ei; } });
+  const l = reLocal(b, p);
+  if (be >= 0) {   // point exact sous le pointeur, projeté sur le segment (dans le plan du toit)
+    const [i, j] = R.e[be], A = rmx(b, R.n[i]), B = rmx(b, R.n[j]), q = l ? rmx(b, l) : null, L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1;
+    const t = q ? clamp(((q.x - A.x) * (B.x - A.x) + (q.y - A.y) * (B.y - A.y)) / L2, 0, 1) : 0.5;
+    return { e: be, s: t };
+  } if (l && Math.abs(l.u) <= 0.5 && Math.abs(l.v) <= 0.5) return { in: true, u: l.u, v: l.v };
   return null;
 }
 const reUV = (b, P) => P.k !== undefined ? b.roofE.n[P.k] : P.e !== undefined ? (([i, j]) => { const A = b.roofE.n[i], B = b.roofE.n[j]; return { u: A.u + (B.u - A.u) * P.s, v: A.v + (B.v - A.v) * P.s }; })(b.roofE.e[P.e]) : P;
@@ -2702,6 +2779,12 @@ function drawRoofEditor(ctx, ci) {
   sc.forEach((q, k) => { if (!q) return;
     if (mv.nodes[k]) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(q.x, q.y, 8, 0, 7); ctx.stroke(); }
     ctx.fillStyle = mv.nodes[k] ? '#7c2d12' : '#444'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, 7); ctx.fill(); });
+  // survol : halo bleu sur le point ou le segment visé
+  const hv = D0 => { if (!D0) return; ctx.strokeStyle = 'rgba(14,165,233,0.9)';
+    if (D0.k !== undefined && sc[D0.k]) { ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(sc[D0.k].x, sc[D0.k].y, 10, 0, 7); ctx.stroke(); }
+    else if (D0.e !== undefined && R.e[D0.e]) { const [i, j] = R.e[D0.e], A = sc[i], B = sc[j]; if (A && B) { ctx.lineWidth = 8; ctx.globalAlpha = 0.55; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.globalAlpha = 1;
+      const uv = reUV(b, D0), q = reScreen(b, { ...uv, d: b.h - roofZAt(b, uv.u, uv.v) }, ci); if (q) { ctx.fillStyle = 'rgba(14,165,233,1)'; ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, 7); ctx.fill(); } } } };
+  hv(S.reDrag ? S.reDrag.B : S.reHover); if (S.reDrag) hv(S.reDrag.A);
   ctx.lineCap = 'butt';
   const D = S.reDrag;
   if (D && D.B) {
@@ -2714,40 +2797,70 @@ function drawRoofEditor(ctx, ci) {
     }
   }
 }
+/** Annuler : instantanés du toit avant chaque modification. */
+const roofSnap = b => JSON.stringify(b.roofE, (k, v) => k[0] === '_' ? undefined : v);
+function roofPush(b) { (S.roofUndo = S.roofUndo || []).push({ id: b.id, r: roofSnap(b) }); if (S.roofUndo.length > 100) S.roofUndo.shift(); }
+function roofUndo() {
+  const st = S.roofUndo || []; const it = st.pop(); if (!it) { status('Rien à annuler.', true); return; }
+  const b = S.buildings.find(x => x.id === it.id); if (!b) return;
+  b.roofE = JSON.parse(it.r); b.roofE.ver = (b.roofE.ver || 0) + 1000; closePop(); S.dirty = true; actLog('Toit : annuler'); status('Dernière modification du toit annulée (' + st.length + ' restante(s)).', true);
+}
+/** Recalage : le point le plus haut revient à la hauteur de l'immeuble, tout le toit descend d'autant. */
+function roofNormalize(b) {
+  const R = b.roofE; if (!R || !R.n.length) return;
+  const dmin = Math.min(...R.n.map(n => n.d)); if (Math.abs(dmin) < 1e-6) return;
+  for (const n of R.n) n.d -= dmin; R.ver++; S.dirty = true;
+}
 function roofEditStart(b) {
   if (!b.roofE) roofInit(b);
   S.roofEdit = b.id; S.editB = false; S.dirty = true;
-  status('Éditeur de toit : glisser depuis un sommet ou un bord pour tracer une ligne ; clic droit sur un élément entouré de blanc pour le monter ou le descendre ; clic droit dans un pan : décrochement. Échap pour terminer.', true);
+  actLog('Éditeur de toit'); status('Éditeur de toit : glisser depuis un sommet ou un bord pour tracer une ligne ; clic droit sur un élément entouré de blanc pour le monter ou le descendre ; clic droit dans un pan : décrochement. Ctrl+Z : annuler. Échap : terminer.', true);
 }
-function roofEditStop() { if (!S.roofEdit) return; S.roofEdit = null; S.reDrag = null; S.dirty = true; status('Édition du toit terminée.', true); }
+function roofEditStop() { if (!S.roofEdit) return; const b = roofB(); if (b) roofNormalize(b); S.roofEdit = null; S.reDrag = null; S.reHover = null; S.dirty = true; status('Édition du toit terminée.', true); }
 /** Clic droit dans l'éditeur ; renvoie vrai s'il a été traité. */
 function roofContext(p, cx, cy) {
   const b = roofB(); if (!b) return false;
   const h = reHit(b, p); if (!h) return false;
-  const R = b.roofE, mv = roofMovable(b), H = () => b === S.building ? S.dH : b.h, bump = () => { R.ver++; S.dirty = true; };
-  const shift = (set, dz) => { const ok = [...set].every(i => { const z = rz(b, R.n[i]) + dz; return z >= 0.3 - 1e-6 && z <= H() + 1e-6; }); if (ok) { for (const i of set) R.n[i].d -= dz; bump(); } };
+  const R = b.roofE, mv = roofMovable(b), H = () => b === S.building ? S.dH : b.h;
+  let pushed = false;
+  const before = () => { if (!pushed) { roofPush(b); pushed = true; } };
+  // on peut monter au-dessus du faîtage : à la fermeture, le point le plus haut revient à la hauteur de l'immeuble
+  const shift = (set, dz) => { const ok = [...set].every(i => rz(b, R.n[i]) + dz >= 0.3 - 1e-6); if (ok && Math.abs(dz) > 1e-9) { before(); for (const i of set) R.n[i].d -= dz; R.ver++; S.dirty = true; } };
+  const hintTop = m => m.hint('Hauteur de l\'immeuble : ' + fmtLen(H()) + ' m. Au-dessus, tout le toit sera recalé à la fermeture (le point le plus haut reste à ' + fmtLen(H()) + ' m).');
+  const common = m => { m.button('Annuler (Ctrl+Z)', roofUndo); m.onClose(() => roofNormalize(b)); };
   if (h.k !== undefined) {
-    if (!mv.nodes[h.k]) return true;
-    openMenu(cx, cy, 'Point du toit', m => { m.num('Hauteur', () => rz(b, R.n[h.k]), v => shift(new Set([h.k]), clamp(v, 0.3, H()) - rz(b, R.n[h.k])), { unit: 'm', big: true, max: H() }); m.hint('Hauteur de l\'immeuble (point le plus haut) : ' + fmtLen(H()) + ' m'); });
+    const del = roofNodeDeletable(b, h.k);
+    if (!mv.nodes[h.k] && !del) return true;
+    openMenu(cx, cy, 'Point du toit', m => {
+      if (mv.nodes[h.k]) { m.num('Hauteur', () => rz(b, R.n[h.k]), v => shift(new Set([h.k]), Math.max(0.3, v) - rz(b, R.n[h.k])), { unit: 'm', big: true, max: H() + 50 }); hintTop(m); }
+      if (del) m.button('Supprimer le point', () => { roofPush(b); roofDelNode(b, h.k); closePop(); S.dirty = true; });
+      common(m);
+    });
     return true;
   }
   if (h.e !== undefined) {
     const [i, j, bd] = R.e[h.e], set = new Set([i, j]), top = () => Math.max(rz(b, R.n[i]), rz(b, R.n[j]));
     if (!mv.edges[h.e] && bd) return true;
-    openMenu(cx, cy, bd ? 'Bord du toit' : 'Ligne du toit', m => {
-      if (mv.edges[h.e]) { m.num('Hauteur', top, v => shift(set, clamp(v, 0.3, H()) - top()), { unit: 'm', big: true, max: H() }); m.hint('Hauteur de l\'immeuble (point le plus haut) : ' + fmtLen(H()) + ' m'); }
-      if (!bd) m.button('Supprimer la ligne', () => { roofDelEdge(b, h.e); closePop(); S.dirty = true; });
+    openMenu(cx, cy, bd === 1 ? 'Bord du toit' : bd ? 'Ligne de décrochement' : 'Ligne du toit', m => {
+      if (mv.edges[h.e]) { m.num('Hauteur', top, v => shift(set, Math.max(0.3, v) - top()), { unit: 'm', big: true, max: H() + 50 }); hintTop(m); }
+      if (!bd) m.button('Supprimer la ligne', () => { roofPush(b); roofDelEdge(b, h.e); closePop(); S.dirty = true; });
+      common(m);
     });
     return true;
   }
   const fk = roofFaceAt(b, h.u, h.v), f = fk >= 0 ? new Set(roofFaces(b)[fk]) : null, ftop = () => Math.max(...[...f].map(i => rz(b, R.n[i])));
   openMenu(cx, cy, 'Pan du toit', m => {
-    if (f && mv.faces[fk]) m.num('Hauteur du pan', ftop, v => shift(f, clamp(v, 0.3, H()) - ftop()), { unit: 'm', big: true, max: H() });
-    m.button('Décrochement ∥ longueur', () => { roofStep(b, h.u, h.v, 0); closePop(); S.dirty = true; });
-    m.button('Décrochement ∥ largeur', () => { roofStep(b, h.u, h.v, 1); closePop(); S.dirty = true; });
+    if (f && mv.faces[fk]) { m.num('Hauteur du pan', ftop, v => shift(f, Math.max(0.3, v) - ftop()), { unit: 'm', big: true, max: H() + 50 }); hintTop(m); }
+    if (f) m.button('Décrocher ce pan', () => {
+      roofPush(b);
+      if (!roofDetach(b, fk)) { status('Ce pan est déjà indépendant : réglez sa hauteur.', true); }
+      else { actLog('Toit : décrochement'); status('Pan décroché : réglez sa hauteur (molette) ; un mur vertical le sépare du reste.', true); }
+      closePop(); S.dirty = true; roofContext(p, cx, cy);
+    });
     m.sep();
-    m.button('Toit plat (réinitialiser)', () => { roofInit(b); closePop(); S.dirty = true; });
+    m.button('Toit plat (réinitialiser)', () => { roofPush(b); roofInit(b); closePop(); S.dirty = true; });
     m.button('Terminer l\'édition', () => { closePop(); roofEditStop(); });
+    common(m);
   });
   return true;
 }
@@ -2758,10 +2871,12 @@ function roofDown(p) {
   if (h.in) return true;   // dans un pan : rien (pas de déplacement de l'immeuble pendant l'édition)
   S.reDrag = { A: h, B: null }; return true;
 }
+/** Survol dans l'éditeur (sans bouton) : met en évidence le point ou le segment visé. */
+function roofHover(p) { const b = roofB(); if (!b) return; const h = reHit(b, p), nh = h && !h.in ? h : null; if (JSON.stringify(nh) !== JSON.stringify(S.reHover)) { S.reHover = nh; S.dirty = true; } }
 function roofMove(p) { const b = roofB(); if (!b || !S.reDrag) return false; S.reDrag.B = reTarget(b, S.reDrag.A, p); S.dirty = true; return true; }
 function roofUp() {
   const b = roofB(), D = S.reDrag; S.reDrag = null; if (!b || !D) return false;
-  if (D.B && dist(rmx(b, reUV(b, D.A)), rmx(b, reUV(b, D.B))) > 0.3) roofAddLine(b, D.A, D.B);
+  if (D.B && dist(rmx(b, reUV(b, D.A)), rmx(b, reUV(b, D.B))) > 0.3) { roofPush(b); roofAddLine(b, D.A, D.B); actLog('Toit : ligne'); }
   S.dirty = true; return true;
 }
 
@@ -3326,6 +3441,7 @@ function drawHandles3(ctx, ci) {
   }
 }
 function enter3D(flat) {
+  actLog('Vue 3D');
   if (S.view3d) return true;
   if (!S.clean || !initGL()) return false;
   if (S.mode !== 'select') setMode('select');
@@ -3394,6 +3510,7 @@ glcv.addEventListener('pointerdown', e => {
   if (g) { drag3 = { type: 'pan', g0: g }; glcv.style.cursor = 'grabbing'; }
 });
 glcv.addEventListener('pointermove', e => {
+  if (!drag3 && S.roofEdit) roofHover(ev3(e));
   if (!drag3 && S.ruler && S.ruler.live) { const q = ground3pt(ev3(e).x, ev3(e).y); if (q) { S.ruler.b = q; S.dirty = true; } }
   if (!drag3) {
     const q = ev3(e), hs = handles3();
@@ -3478,9 +3595,74 @@ function snapshot3d() {
   return c;
 }
 
+/* ---------------------------------------- Erreurs, journal et sauvegarde de secours */
+const ACT = [];
+function actLog(msg) { ACT.push(new Date().toLocaleTimeString('fr-FR') + ' ' + msg); if (ACT.length > 80) ACT.shift(); }
+let lastErr = null, errCount = 0;
+function stateSummary() {
+  const b = S.building;
+  return {
+    vue: S.view3d ? '3D' : '2D', mode: S.mode, editeurToit: !!S.roofEdit, plan: S.clean ? S.clean.width + '×' + S.clean.height : null,
+    site: S.site ? { label: S.site.label, Lx: S.site.Lx, Ly: S.site.Ly } : null, constructions: NB ? NB.list.length : 0, arbres: S.veg && S.veg.trees ? S.veg.trees.length : 0,
+    immeubles: S.buildings.length, selection: b ? { w: +(b.w / pxPerM()).toFixed(2), l: +(b.l / pxPerM()).toFixed(2), h: b.h, fac: b.fac, toit: b.roofE ? JSON.parse(JSON.stringify(b.roofE, (k, v) => k[0] === '_' ? undefined : v)) : null } : null,
+    webgl: G.gl ? (() => { try { const x = G.gl.getExtension('WEBGL_debug_renderer_info'); return x ? G.gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : 'ok'; } catch (e) { return '?'; } })() : 'inactif'
+  };
+}
+function reportText() {
+  return ['Ombre portée — rapport d\'erreur', 'Date : ' + new Date().toLocaleString('fr-FR'), 'Navigateur : ' + navigator.userAgent,
+    'Erreur (' + errCount + ') : ' + (lastErr ? lastErr.msg : '—'), lastErr && lastErr.stack ? 'Pile :\n' + lastErr.stack : '',
+    'Dernières actions :\n' + ACT.slice(-40).join('\n'), 'État :\n' + JSON.stringify(stateSummary())].join('\n\n');
+}
+function reportError(e, where) {
+  const msg = (e && (e.message || e.reason && e.reason.message || String(e.reason || e))) || 'erreur inconnue', stack = (e && (e.stack || e.reason && e.reason.stack || e.error && e.error.stack)) || '';
+  errCount++; const first = !lastErr || lastErr.msg !== msg; lastErr = { msg: (where ? '[' + where + '] ' : '') + msg, stack };
+  console.error(e); actLog('ERREUR ' + lastErr.msg);
+  if (first || $('errBox').hidden) { $('errMsg').textContent = lastErr.msg + (stack ? '\n' + String(stack).split('\n').slice(0, 4).join('\n') : ''); $('errBox').hidden = false; }
+  autosave(true);
+}
+window.addEventListener('error', e => reportError(e.error || e, 'script'));
+window.addEventListener('unhandledrejection', e => reportError(e, 'promesse'));
+$('errClose').onclick = () => { $('errBox').hidden = true; };
+$('errCopy').onclick = async () => { const t = reportText(); try { await navigator.clipboard.writeText(t); status('Rapport copié : collez-le dans votre message.', true); } catch (e) { prompt('Copiez ce rapport :', t); } };
+$('errSave').onclick = async () => { try { await saveBlob(new Blob([projectJSON()], { type: 'application/json' }), (S.fileName || 'projet') + '_secours.ombre.json', 'Projet Ombre portée', 'application/json', '.json'); } catch (e) { alert('Enregistrement impossible : ' + e.message); } };
+glcv.addEventListener('webglcontextlost', e => { e.preventDefault(); reportError(new Error('Contexte WebGL perdu (carte graphique) : la vue 3D va être réinitialisée'), '3D'); });
+glcv.addEventListener('webglcontextrestored', () => { G.gl = null; G.planSrc = null; G.idsVer = -1; G.nbKey = ''; G.groundKey = ''; G.vegKey = ''; G.bufs = {}; initGL(); S.dirty = true; actLog('Contexte WebGL rétabli'); });
+// sauvegarde automatique (IndexedDB) toutes les minutes, et après une erreur
+function idb() { return new Promise((res, rej) => { const q = indexedDB.open('ombre-portee', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+async function idbSet(k, v) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }
+async function idbGet(k) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv'); const q = t.objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
+let lastAuto = 0, autoBusy = false;
+async function autosave(force) {
+  if (!S.orig || autoBusy || (!force && performance.now() - lastAuto < 55000)) return;
+  autoBusy = true; lastAuto = performance.now();
+  try { await idbSet('autosave', { date: Date.now(), name: S.fileName, json: projectJSON() }); } catch (e) { console.warn('sauvegarde automatique', e); }
+  autoBusy = false;
+}
+setInterval(() => autosave(false), 60000);
+// la proposition de restauration n'apparaît que si la session précédente ne s'est pas fermée normalement
+let crashed = false; try { crashed = localStorage.getItem('ombre-portee-open') === '1'; localStorage.setItem('ombre-portee-open', '1'); } catch (e) { }
+window.addEventListener('pagehide', () => { try { localStorage.removeItem('ombre-portee-open'); } catch (e) { } });
+async function offerRestore() {
+  if (!crashed) return;
+  try {
+    const a = await idbGet('autosave'); if (!a || !a.json) return;
+    $('errT').textContent = 'Session précédente disponible';
+    $('errMsg').textContent = '« ' + (a.name || 'projet') + ' », sauvegardé automatiquement le ' + new Date(a.date).toLocaleString('fr-FR') + '.';
+    $('errCopy').textContent = 'Restaurer'; $('errSave').hidden = true; $('errBox').hidden = false;
+    $('errCopy').onclick = async () => { $('errBox').hidden = true; try { await loadProject(JSON.parse(a.json)); actLog('Session restaurée'); } catch (e) { reportError(e, 'restauration'); } resetErrBox(); };
+    $('errClose').onclick = () => { $('errBox').hidden = true; resetErrBox(); };
+  } catch (e) { console.warn(e); }
+}
+function resetErrBox() {
+  $('errT').textContent = 'Une erreur s\'est produite'; $('errCopy').textContent = 'Copier le rapport'; $('errSave').hidden = false;
+  $('errCopy').onclick = async () => { const t = reportText(); try { await navigator.clipboard.writeText(t); status('Rapport copié : collez-le dans votre message.', true); } catch (e) { prompt('Copiez ce rapport :', t); } };
+  $('errClose').onclick = () => { $('errBox').hidden = true; };
+}
+
 /* ---------------------------------------------------------------- Clavier */
 document.addEventListener('keydown', e => {
   const tg = e.target.tagName;
+  if (S.roofEdit && (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !(tg === 'INPUT' && e.target.type === 'text')) { e.preventDefault(); roofUndo(); return; }
   if (tg === 'INPUT' && e.target.type === 'text' || tg === 'SELECT' || tg === 'TEXTAREA') return;
   let done = true;
   switch (e.key) {
@@ -3503,6 +3685,10 @@ document.addEventListener('keydown', e => {
 /* ------------------------------------------------------- Boucle d'animation */
 let last = performance.now();
 function tick(now) {
+  requestAnimationFrame(tick);   // toujours relancée, même si le dessin échoue
+  try { tickBody(now); } catch (e) { reportError(e, 'dessin'); S.dirty = false; }
+}
+function tickBody(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (S.playing) {
     S.minute += S.playSpeed * dt; S.dMin = S.minute;
@@ -3517,8 +3703,7 @@ function tick(now) {
   S.dMin = ease(S.dMin, S.minute, 0.01);
   S.dOff = ease(S.dOff, curOff(), 1e-4);
   S.dH = ease(S.dH, S.height, 1e-3);
-  if (moving || S.dirty || S.playing) { draw(); updateSunInfo(); S.dirty = false; }
-  requestAnimationFrame(tick);
+  if (moving || S.dirty || S.playing) { S.dirty = false; draw(); updateSunInfo(); }
 }
 function syncTimeOnly() {
   placeClock();
@@ -3539,6 +3724,7 @@ syncUI();
 setMode('select');
 status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle vert (l\'immeuble) et un segment rouge d\'échelle, ou essayez le plan de démonstration.');
 requestAnimationFrame(tick);
+offerRestore();
 </script>
 </body>
 </html>
