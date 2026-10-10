@@ -76,7 +76,12 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #ov{pointer-events:none}
 [hidden]{display:none!important}
 .pop{position:fixed;z-index:20;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.2);padding:8px 10px;width:250px}
-.pop .t{font-weight:600;margin-bottom:4px}
+.pop .t{font-weight:600;margin:-8px -10px 6px;padding:7px 10px;background:#f3f5f9;border-bottom:1px solid var(--line);border-radius:8px 8px 0 0}
+.pop{width:270px}
+.pop .grid{display:grid;gap:4px;margin:4px 0}
+.pop .grid button{width:100%}
+.pop .grid.btns > button:last-child:nth-child(odd){grid-column:1/-1}
+.pop .glab{font-size:11px;color:var(--muted);margin-top:6px}
 .pop .f .lbl{width:96px}
 .pop input[type=range]{flex:1}
 .pop .sep{border-top:1px solid var(--line);margin:6px 0}
@@ -105,7 +110,7 @@ input.big{font-size:18px;font-weight:600;width:90px}
       <span id="siteDims" class="hint" title="Dimensions actuelles du plan (poignées du plan pour les modifier)"></span>
     </div>
     <div class="row">
-      <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cPhoto"> Photo aérienne</label>
+      <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cPhoto" checked> Photo aérienne</label>
       <label title="Parcelles du cadastre en surimpression"><input type="checkbox" id="cCad" checked> Cadastre</label>
       <label title="Arbres issus du LiDAR HD (modèle de surface − terrain, hors bâtiments)"><input type="checkbox" id="cShowTrees" checked> Arbres</label>
     </div>
@@ -267,6 +272,8 @@ input.big{font-size:18px;font-weight:600;width:90px}
         <button id="btnNow">Maintenant</button>
         <label title="Afficher les immeubles projetés"><input type="checkbox" id="cbProj" checked> Immeuble</label>
         <label title="Ombre des immeubles projetés (décocher pour mieux voir les ombres d'un scénario)"><input type="checkbox" id="cbShadow" checked> Ombre</label>
+        <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cbPhoto" checked> Photo</label>
+        <label title="Arbres (site IGN)"><input type="checkbox" id="cbTrees" checked> Arbres</label>
     </div>
     </div>
   </div>
@@ -319,7 +326,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'plan', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'ortho', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -870,7 +877,7 @@ function render(ctx, W, H, v, opt = {}) {
     for (const bb of BL) {
       polyPath(ctx, corners(bb)); ctx.globalAlpha = bb === b ? 0.88 : 0.65; ctx.fillStyle = bb.roofCol; ctx.fill(); ctx.globalAlpha = 1;
       ctx.strokeStyle = BLD_DARK; ctx.lineWidth = (bb === b ? 2 : 1.2) * px; ctx.stroke();
-      if (bb.roofE) { ctx.strokeStyle = 'rgba(60,30,10,0.7)'; ctx.lineWidth = 1 * px; for (const [i, j, bd] of bb.roofE.e) if (!bd) { const A = rWorld(bb, bb.roofE.n[i]), B = rWorld(bb, bb.roofE.n[j]); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); } }
+      if (bb.roofE) { ctx.strokeStyle = 'rgba(35,18,6,0.95)'; ctx.lineWidth = 1.6 * px; for (const [i, j, bd] of bb.roofE.e) if (bd !== 1) { const A = rWorld(bb, bb.roofE.n[i]), B = rWorld(bb, bb.roofE.n[j]); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); } }
     }
   }
   ctx.restore();
@@ -1295,6 +1302,8 @@ $('btnUTC').onclick = () => setUtcMode(true);
 function stopPlay() { if (S.playing) togglePlay(); }
 $('cbProj').onchange = e => { S.showProj = e.target.checked; if (!S.showProj) S.editB = false; changed(); };
 $('cbShadow').onchange = e => { S.showProjShadow = e.target.checked; changed(); };
+$('cbPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) composeSite(); changed(); };
+$('cbTrees').onchange = e => { S.showTrees = e.target.checked; changed(); };
 $('btnNow').onclick = () => {
   stopPlay();
   const now = Date.now(), off = S.utcMode ? 0 : S.tzStd + (S.dstAuto && isEUDST(now) ? 1 : 0), loc = now / 6e4 + off * 60;
@@ -1437,7 +1446,8 @@ function syncUI() {
   $('cHigh').checked = S.hHigh; $('rowHigh').hidden = !S.terrain;
   if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
   $('siteDims').textContent = S.site && S.site.Lx ? 'actuelle : ' + fmtNum(S.site.Lx, 0) + ' × ' + fmtNum(S.site.Ly, 0) + ' m' : '';
-  $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow;
+  $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow; $('cbPhoto').checked = S.bgMode === 'ortho'; $('cbTrees').checked = S.showTrees;
+  $('cbPhoto').parentElement.hidden = !S.layers; $('cbTrees').parentElement.hidden = !S.veg;
   $('cPhoto').checked = S.bgMode === 'ortho'; $('cCad').checked = S.showCad;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
@@ -1802,15 +1812,21 @@ function openMenu(cx, cy, title, build) {
       row.append(mk('span', 'hint', label), inp, val); row.firstChild.style.width = '96px'; val.style.width = '42px'; hPop.append(row);
     },
     choices(label, opts, get, set) {
-      const row = mk('div', 'row'); if (label) row.append(mk('span', 'hint', label));
+      if (label) hPop.append(mk('div', 'glab', label));
+      const row = mk('div', 'grid'), nc = opts.length === 4 ? 2 : Math.min(3, opts.length); row.style.gridTemplateColumns = 'repeat(' + nc + ', 1fr)';
       const btns = opts.map(([t, v]) => { const b = mk('button', 'small', t); b.onclick = () => { set(v); paint(); refresh.forEach(f => f()); changed(); }; row.append(b); return [b, v]; });
       const paint = () => btns.forEach(([b, v]) => b.classList.toggle('on', get() === v)); paint(); refresh.push(paint);
       hPop.append(row);
     },
-    button(label, fn) { const b = mk('button', 'small', label); b.onclick = () => { fn(); changed(); }; let row = hPop.lastChild; if (!row || !row.classList.contains('btns')) { row = mk('div', 'row btns'); hPop.append(row); } row.append(b); },
+    button(label, fn) {   // boutons consécutifs : grille de deux colonnes
+      const b = mk('button', 'small', label); b.onclick = () => { fn(); changed(); };
+      let row = hPop.lastChild; if (!row || !row.classList.contains('btns')) { row = mk('div', 'grid btns'); row.style.gridTemplateColumns = '1fr 1fr'; hPop.append(row); }
+      row.append(b);
+    },
     hint(t) { hPop.append(mk('div', 'hint', t)); },
     onClose(fn) { hPop._onClose = fn; },
-    sep() { hPop.append(mk('div', 'sep')); }
+    sep() { hPop.append(mk('div', 'sep')); },
+    label(t) { hPop.append(mk('div', 'glab', t)); }
   };
   build(api);
   const ok = mk('button', 'on small', 'OK'); ok.onclick = closePop; const row = mk('div', 'row'); row.style.justifyContent = 'flex-end'; row.append(ok); hPop.append(row);
@@ -1847,7 +1863,7 @@ function menuProj(b, part, cx, cy) {
     if (part === 'wall') { wall(); roof(); } else { roof(); wall(); }
     m.choices('Façade', FACADES, () => b.fac || 0, v => b.fac = v);
     if (S.terrain) m.check('Hauteur depuis le point le plus haut du terrain', () => S.hHigh, v => S.hHigh = v);
-    m.button('Modifier la forme', () => { S.editB = true; closePop(); });
+    m.sep(); m.button('Modifier la forme', () => { S.editB = true; closePop(); });
     m.button(S.roofEdit === b.id ? 'Terminer l\'édition du toit' : 'Éditeur de toit', () => { closePop(); if (S.roofEdit === b.id) roofEditStop(); else roofEditStart(b); });
     m.button('Supprimer', () => { closePop(); $('btnDelB').onclick(); });
   });
@@ -2337,27 +2353,54 @@ function drawDials(ctx, W, H, n, sun) {
   haloText(ctx, sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
   // cadran solaire horizontal, orienté comme le plan : l'ombre du style a la direction des ombres des immeubles
   const rot = Math.atan2(nx, -ny); L.rot = rot; dialRot = rot;
-  ctx.fillStyle = 'rgba(255,253,245,0.94)'; ctx.strokeStyle = '#b9a77a'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(sx, sy, R, 0, 7); ctx.fill(); ctx.stroke();
-  const day = Math.round(S.dDay), d0 = S.minute - mod(S.minute, 1440);
-  ctx.font = '10px system-ui, sans-serif';
-  for (let h = 0; h < 24; h++) for (const half of [0, 30]) {
-    const { a, alt } = dialAngle(day, h * 60 + half); if (alt <= 0) continue;
+  // pierre patinée, double filet
+  const gr = ctx.createRadialGradient(sx - R * 0.3, sy - R * 0.35, R * 0.1, sx, sy, R);
+  gr.addColorStop(0, '#fbf3df'); gr.addColorStop(0.75, '#efe0bd'); gr.addColorStop(1, '#dcc796');
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(sx, sy, R, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#8a7340'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(sx, sy, R - 1, 0, 7); ctx.stroke();
+  ctx.strokeStyle = 'rgba(138,115,64,0.55)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(sx, sy, R - 5, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(sx, sy, R * 0.66, 0, 7); ctx.stroke();
+  const day = Math.round(S.dDay);
+  const ROM = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+  ctx.font = '600 9.5px Georgia, "Times New Roman", serif';
+  const nums = [];
+  for (let h = 0; h < 24; h++) for (const q of [0, 15, 30, 45]) {
+    const { a, alt } = dialAngle(day, h * 60 + q); if (alt <= 0) continue;
     const ux = Math.sin(a + rot), uy = -Math.cos(a + rot);
-    ctx.strokeStyle = half ? '#d8cba8' : '#9c8a5c'; ctx.lineWidth = half ? 0.8 : 1.2;
-    ctx.beginPath(); ctx.moveTo(sx + ux * (half ? R * 0.6 : R * 0.25), sy + uy * (half ? R * 0.6 : R * 0.25)); ctx.lineTo(sx + ux * R * 0.68, sy + uy * R * 0.68); ctx.stroke();
-    if (!half) { ctx.fillStyle = '#6b5a2e'; ctx.fillText(String(h), sx + ux * (R * 0.84), sy + uy * (R * 0.84)); }
+    if (q) {   // quarts et demies : petits traits entre les deux filets
+      ctx.strokeStyle = q === 30 ? '#8a7340' : 'rgba(138,115,64,0.6)'; ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.moveTo(sx + ux * R * (q === 30 ? 0.58 : 0.61), sy + uy * R * (q === 30 ? 0.58 : 0.61)); ctx.lineTo(sx + ux * R * 0.66, sy + uy * R * 0.66); ctx.stroke();
+      continue;
+    }
+    ctx.strokeStyle = '#6b5426'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(sx + ux * R * 0.16, sy + uy * R * 0.16); ctx.lineTo(sx + ux * R * 0.66, sy + uy * R * 0.66); ctx.stroke();
+    nums.push({ h, ang: Math.atan2(uy, ux), ux, uy, w: ctx.measureText(ROM[h % 12]).width, pr: h === 12 ? 0 : h % 6 === 0 ? 1 : h % 3 === 0 ? 2 : 3 });
   }
+  // chiffres romains : sans chevauchement (midi d'abord, puis VI, III/IX, puis les autres)
+  { const placed = [], rr = R * 0.82;
+    nums.sort((x, y) => x.pr - y.pr || Math.abs(x.h - 12) - Math.abs(y.h - 12));
+    for (const n of nums) {
+      if (placed.some(o => Math.abs(mod(n.ang - o.ang + Math.PI, 2 * Math.PI) - Math.PI) * rr < (n.w + o.w) / 2 + 2)) continue;
+      placed.push(n);
+      ctx.save(); ctx.translate(sx + n.ux * rr, sy + n.uy * rr); ctx.rotate(n.ang + Math.PI / 2);
+      ctx.fillStyle = '#4a3a17'; ctx.fillText(ROM[n.h % 12], 0, 0); ctx.restore();
+    } }
+  // devise, en petit le long du bord bas
+  { const txt = 'Nous ne vous donnerons que des heures ensoleillées', r0 = R - 3.2; ctx.save(); ctx.font = 'italic 5.2px Georgia, serif'; ctx.fillStyle = 'rgba(90,70,30,0.55)';
+    const w = ctx.measureText(txt).width, span = w / r0; let a0 = Math.PI / 2 + span / 2;
+    for (const ch of txt) { const cw = ctx.measureText(ch).width, a = a0 - cw / 2 / r0; ctx.save(); ctx.translate(sx + Math.cos(a) * r0, sy + Math.sin(a) * r0); ctx.rotate(a - Math.PI / 2); ctx.fillText(ch, 0, 0); ctx.restore(); a0 -= cw / r0; }
+    ctx.restore(); }
   const cur = dialAngle(day, mod(S.dMin, 1440));
-  // style (gnomon) vers le nord-midi, et son ombre
-  ctx.strokeStyle = '#7a6a40'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.sin(rot) * R * 0.22, sy - Math.cos(rot) * R * 0.22); ctx.stroke();
+  // ombre du style, puis style triangulaire (vers le midi solaire)
   if (cur.alt > 0) {
-    const ux = Math.sin(cur.a + rot), uy = -Math.cos(cur.a + rot);
-    ctx.strokeStyle = 'rgba(30,30,45,0.85)'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + ux * (R - 6), sy + uy * (R - 6)); ctx.stroke(); ctx.lineCap = 'butt';
-    ctx.fillStyle = '#223'; ctx.beginPath(); ctx.arc(sx + ux * (R - 6), sy + uy * (R - 6), 4.5, 0, 7); ctx.fill();
+    const ux = Math.sin(cur.a + rot), uy = -Math.cos(cur.a + rot), px = -uy, py = ux, Lm = R * 0.72;
+    ctx.fillStyle = 'rgba(35,30,25,0.78)'; ctx.beginPath(); ctx.moveTo(sx + px * 2.2, sy + py * 2.2); ctx.lineTo(sx + ux * Lm, sy + uy * Lm); ctx.lineTo(sx - px * 2.2, sy - py * 2.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1e1a14'; ctx.beginPath(); ctx.arc(sx + ux * Lm, sy + uy * Lm, 3.5, 0, 7); ctx.fill();
   }
-  ctx.fillStyle = '#7a6a40'; ctx.beginPath(); ctx.arc(sx, sy, 3.5, 0, 7); ctx.fill();
+  { const gx = Math.sin(rot), gy = -Math.cos(rot), qx = -gy, qy = gx, Lg = R * 0.3;
+    ctx.fillStyle = '#9c7b3a'; ctx.strokeStyle = '#5c4518'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx + qx * 3, sy + qy * 3); ctx.lineTo(sx + gx * Lg, sy + gy * Lg); ctx.lineTo(sx - qx * 3, sy - qy * 3); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = '#5c4518'; ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 7); ctx.fill();
   ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334';
   // calendrier : douze mois, flèche sur le jour courant, repères des solstices et équinoxes
   const { kx, ky, R3 } = L, yr = fromDays(S.day).y;
@@ -2548,9 +2591,15 @@ function roofMovable(b) {
 function pointInPoly(p, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], q = poly[j]; if ((a.y > p.y) !== (q.y > p.y) && p.x < (q.x - a.x) * (p.y - a.y) / (q.y - a.y) + a.x) c = !c; } return c; }
 /** Pan contenant le point (u, v), et altitude du toit en ce point. */
 function roofFaceAt(b, u, v) {
-  const F = roofFaces(b), p = rmx(b, { u, v });
-  for (let k = 0; k < F.length; k++) if (pointInPoly(p, unspike(F[k]).map(i => rmx(b, b.roofE.n[i])))) return k;
-  return -1;
+  const F = roofFaces(b), p = rmx(b, { u, v }); let best = -1, ba = Infinity;   // le plus petit pan contenant le point (formes incluses : cheminée…)
+  for (let k = 0; k < F.length; k++) { const P = unspike(F[k]).map(i => rmx(b, b.roofE.n[i])); if (!pointInPoly(p, P)) continue; const a = Math.abs(polyArea(P)); if (a < ba) { ba = a; best = k; } }
+  return best;
+}
+function roofZOther(b, u, v, comp) {
+  if (Math.abs(u) > 0.5 || Math.abs(v) > 0.5) return null;
+  const F = roofFaces(b), cc = roofComps(b), p = rmx(b, { u, v });
+  for (const f of F) { if (cc[f[0]] === comp) continue; const L = unspike(f); if (!pointInPoly(p, L.map(i => rmx(b, b.roofE.n[i])))) continue; const pl = fitPlane(facePts(b, f)); return pl ? pl.a * p.x + pl.b * p.y + pl.c : Math.max(...facePts(b, f).map(q => q.z)); }
+  return null;
 }
 function roofZAt(b, u, v) {
   if (!b.roofE) return b === S.building ? S.dH : b.h;
@@ -2583,9 +2632,13 @@ function segX(p, q, a, c) {   // intersection des segments pq et ac : paramètre
 function roofAddLine(b, A, B) {
   const R = b.roofE, uvB = reUV(b, B), ia = roofNodeAt(b, A), ib = roofNodeAt(b, B.k !== undefined ? B : snapRoof(b, uvB, 0.02, roofComps(b)[ia])); if (ia === ib) return;
   const isolated = k => !R.e.some(([i, j]) => i === k || j === k);
-  const compOf = k => { if (!isolated(k)) return roofComps(b)[k]; const fk = roofFaceAt(b, R.n[k].u, R.n[k].v); return fk >= 0 ? roofComps(b)[roofFaces(b)[fk][0]] : roofComps(b)[ia]; };
-  if (compOf(ia) !== compOf(ib)) { status('Une ligne ne peut pas relier deux parties décrochées du toit.', true); roofClean(b); return; }
-  const comp = compOf(ia);
+  // composante de chaque extrémité ; un point libre appartient au pan qui le contient, sauf s'il prolonge une forme encore ouverte (cheminée en cours)
+  const cc = roofComps(b), hasFace = c => roofFaces(b).some(f => cc[f[0]] === c);
+  const faceComp = k => { const fk = roofFaceAt(b, R.n[k].u, R.n[k].v); return fk >= 0 ? cc[roofFaces(b)[fk][0]] : cc[k]; };
+  const eff = (k, o) => !isolated(k) ? cc[k] : !isolated(o) && !hasFace(cc[o]) ? cc[o] : faceComp(k);
+  const ca = eff(ia, ib), cb = eff(ib, ia);
+  if (ca !== cb && hasFace(ca) && hasFace(cb)) { status('Une ligne ne peut pas relier deux parties décrochées du toit.', true); roofClean(b); return; }
+  const comp = hasFace(ca) ? ca : cb;
   const pa = rmx(b, R.n[ia]), pb = rmx(b, R.n[ib]), cuts = [];
   for (let ei = 0; ei < R.e.length; ei++) {
     const [i, j] = R.e[ei]; if (i === ia || j === ia || i === ib || j === ib || roofComps(b)[i] !== comp) continue;
@@ -2635,7 +2688,8 @@ function roofDetach(b, fk) {
   const shared = ei => { const [i, j] = R.e[ei], a = dir.get(i + ',' + j), c = dir.get(j + ',' + i); return a !== undefined && c !== undefined && a !== c; };
   if (![...fEdges].some(shared)) return false;   // déjà indépendant
   const nodes = new Set(f), dup = new Map();
-  for (const v of nodes) if (R.e.some(([i, j], ei) => (i === v || j === v) && !fEdges.has(ei))) { R.n.push({ ...R.n[v] }); dup.set(v, R.n.length - 1); }
+  for (const v of nodes) if (R.e.some(([i, j], ei) => (i === v || j === v) && (!fEdges.has(ei) || shared(ei)))) {   // sommets partagés avec le reste (y compris par une ligne dédoublée)
+    R.n.push({ ...R.n[v] }); dup.set(v, R.n.length - 1); }
   const m = v => dup.has(v) ? dup.get(v) : v;
   for (const ei of fEdges) {
     const [i, j, bd] = R.e[ei];
@@ -2665,7 +2719,8 @@ function earClip(pts) {
       const ia = idx[(k - 1 + idx.length) % idx.length], ib = idx[k], ic = idx[(k + 1) % idx.length], A = pts[ia], B = pts[ib], C = pts[ic];
       const cr = cross(A, B, C);
       if (cr <= 1e-9) { if (Math.abs(cr) < 1e-9) { idx.splice(k, 1); cut = true; break; } continue; }
-      if (idx.some(j => j !== ia && j !== ib && j !== ic && cross(A, B, pts[j]) >= 0 && cross(B, C, pts[j]) >= 0 && cross(C, A, pts[j]) >= 0)) continue;
+      const same = q => (Math.abs(q.x - A.x) < 1e-7 && Math.abs(q.y - A.y) < 1e-7) || (Math.abs(q.x - B.x) < 1e-7 && Math.abs(q.y - B.y) < 1e-7) || (Math.abs(q.x - C.x) < 1e-7 && Math.abs(q.y - C.y) < 1e-7);
+      if (idx.some(j => j !== ia && j !== ib && j !== ic && !same(pts[j]) && cross(A, B, pts[j]) > 1e-12 && cross(B, C, pts[j]) > 1e-12 && cross(C, A, pts[j]) > 1e-12)) continue;
       out.push([ia, ib, ic]); idx.splice(k, 1); cut = true; break;
     }
     if (!cut) break;
@@ -2673,6 +2728,9 @@ function earClip(pts) {
   if (idx.length === 3) out.push(idx.slice());
   return out;
 }
+/** Couleur propre d'un pan (repère posé dans le pan), sinon celle du toit. */
+const polyArea = P => P.reduce((s, p, k) => { const q = P[(k + 1) % P.length]; return s + p.x * q.y - q.x * p.y; }, 0) / 2;
+function faceColor(b, fk) { const fc = b.roofE && b.roofE.fc; if (!fc) return null; for (let k = fc.length - 1; k >= 0; k--) if (roofFaceAt(b, fc[k].u, fc[k].v) === fk) return hexRGB(fc[k].col); return null; }
 /** Géométrie 3D de l'immeuble : murs (avec façade) et toit (plat ou édité). */
 function buildingGeo(g, b, foot, gr, ppm) {
   const wall = hexRGB(b.wallCol), roof = hexRGB(b.roofCol), fac = b.fac || 0, cs = corners(b), H = b === S.building ? S.dH : b.h;
@@ -2693,25 +2751,35 @@ function buildingGeo(g, b, foot, gr, ppm) {
     const horiz = Math.abs(A.v - B.v) < 1e-6, sa = horiz ? (A.u + 0.5) * b.w / ppm : (A.v + 0.5) * b.l / ppm, sb = horiz ? (B.u + 0.5) * b.w / ppm : (B.v + 0.5) * b.l / ppm;
     side(pa, pb, sa, sb, gr, gr, rz(b, A), rz(b, B));
   }
-  for (const [i, j, bd] of R.e) {   // mur vertical d'un décrochement, entre le pan décroché et le reste
-    if (bd !== 2) continue;
-    const A = R.n[i], B = R.n[j], tw = R.e.find(([a, c, t]) => t === 3 && ((sameUV(R.n[a], A) && sameUV(R.n[c], B)) || (sameUV(R.n[a], B) && sameUV(R.n[c], A))));
-    let za = rz(b, A), zb = rz(b, B), ya = 0, yb = 0;
-    if (tw) { const [a, c] = tw, nA = sameUV(R.n[a], A) ? R.n[a] : R.n[c], nB = nA === R.n[a] ? R.n[c] : R.n[a]; ya = rz(b, nA); yb = rz(b, nB); }
-    const pa = rWorld(b, A), pb = rWorld(b, B), lo = (y1, y2) => foot + Math.min(y1, y2) * ppm, hi = (y1, y2) => Math.max(y1, y2);
-    const dx = pb.x - pa.x, dy = pb.y - pa.y, L = Math.hypot(dx, dy) || 1, s1 = L / ppm;
-    g.wall([pa.x, tw ? lo(za, ya) : gr, pa.y], [pb.x, tw ? lo(zb, yb) : gr, pb.y], [pb.x, foot + hi(zb, yb) * ppm, pb.y], [pa.x, foot + hi(za, ya) * ppm, pa.y], [-dy / L, 0, dx / L], wall,
-      [[0, tw ? Math.min(za, ya) : 0], [s1, tw ? Math.min(zb, yb) : 0], [s1, hi(zb, yb)], [0, hi(za, ya)]], fac);
+  // murs des parties décrochées (2) et des formes indépendantes : du bord du pan jusqu'au toit voisin, mesuré juste à côté (sinon jusqu'au sol)
+  { const F = roofFaces(b), cc = roofComps(b), use = new Map();
+    F.forEach((f, fi) => f.forEach((v, k) => { const w = f[(k + 1) % f.length], key = Math.min(v, w) + ',' + Math.max(v, w); use.set(key, (use.get(key) || []).concat([[fi, v, w]])); }));
+    const border = new Set(); R.e.forEach(([i, j, bd]) => { if (bd === 1) border.add(cc[i]); });
+    for (const [i, j, bd] of R.e) {
+      const key = Math.min(i, j) + ',' + Math.max(i, j), us = use.get(key) || [];
+      const island = bd === 0 && !border.has(cc[i]) && us.length === 1;
+      if (!(bd === 2 || island) || us.length !== 1) continue;
+      const [, v, w] = us[0], A = R.n[v], B = R.n[w], pa = rWorld(b, A), pb = rWorld(b, B);   // pan à gauche de v → w : extérieur à droite
+      const ma = rmx(b, A), mb = rmx(b, B), L = dist(ma, mb) || 1, ox = (mb.y - ma.y) / L * 0.06, oy = -(mb.x - ma.x) / L * 0.06;
+      const other = (nd, f) => { const p = rmx(b, nd), q = { x: p.x + ox + (f ? (mb.x - ma.x) / L * 0.02 * f : 0), y: p.y + oy + (f ? (mb.y - ma.y) / L * 0.02 * f : 0) }, uv = { u: q.x / (b.w / ppm), v: -q.y / (b.l / ppm) };
+        const z = roofZOther(b, uv.u, uv.v, cc[v]); return z === null ? (gr - foot) / ppm : z; };
+      const za = rz(b, A), zb = rz(b, B), ya = other(A, 1), yb = other(B, -1), s1 = L;
+      const wn = [rWorld(b, { u: A.u, v: A.v }), pb];
+      const nW = (() => { const dx = pb.x - pa.x, dy = pb.y - pa.y, l = Math.hypot(dx, dy) || 1; let n = [dy / l, 0, -dx / l]; const t = rWorld(b, { u: (ma.x + ox * 10) / (b.w / ppm), v: -(ma.y + oy * 10) / (b.l / ppm) }); if (n[0] * (t.x - pa.x) + n[2] * (t.y - pa.y) < 0) n = [-n[0], 0, -n[2]]; return n; })();
+      g.wall([pa.x, foot + Math.min(za, ya) * ppm, pa.y], [pb.x, foot + Math.min(zb, yb) * ppm, pb.y], [pb.x, foot + Math.max(zb, yb) * ppm, pb.y], [pa.x, foot + Math.max(za, ya) * ppm, pa.y], nW, wall,
+        [[0, Math.min(za, ya)], [s1, Math.min(zb, yb)], [s1, Math.max(zb, yb)], [0, Math.max(za, ya)]], fac);
+    }
   }
-  for (const f of roofFaces(b)) {
-    const L = unspike(f); if (L.length < 3) continue;
+  roofFaces(b).forEach((f, fk) => {
+    const L = unspike(f); if (L.length < 3) return;
     const pts = L.map(i => rmx(b, R.n[i])), tri = earClip(pts);
+    const fcol = faceColor(b, fk) || roof;
     for (const t of tri) {
       const P = t.map(k => { const nd = R.n[L[k]], w = rWorld(b, nd); return [w.x, foot + rz(b, nd) * ppm, w.y]; });
       let n = v3.norm(v3.cross(v3.sub(P[1], P[0]), v3.sub(P[2], P[0]))); if (n[1] < 0) n = v3.mul(n, -1);
-      for (const q of P) g.v(q, n, roof, 0);
+      for (const q of P) g.v(q, n, fcol, 0);
     }
-  }
+  });
 }
 /** Ombre portée 2D d'un immeuble (enveloppe des ombres des sommets du toit). */
 function shadowPolyB(b, sun) {
@@ -2746,13 +2814,16 @@ function reHit(b, p) {
   let be = -1; bd = 9;
   R.e.forEach(([i, j], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return; const L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1, t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1), d = Math.hypot(A.x + (B.x - A.x) * t - p.x, A.y + (B.y - A.y) * t - p.y); if (d < bd - 0.5 || (be >= 0 && Math.abs(d - bd) <= 0.5 && rz(b, R.n[i]) > rz(b, R.n[R.e[be][0]]))) { bd = Math.min(bd, d); be = ei; } });
   const l = reLocal(b, p);
-  if (be >= 0) {   // point exact sous le pointeur, projeté sur le segment (dans le plan du toit)
-    const [i, j] = R.e[be], A = rmx(b, R.n[i]), B = rmx(b, R.n[j]), q = l ? rmx(b, l) : null, L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1;
-    const t = q ? clamp(((q.x - A.x) * (B.x - A.x) + (q.y - A.y) * (B.y - A.y)) / L2, 0, 1) : 0.5;
-    return { e: be, s: t };
+  if (be >= 0) {   // point exact sous le pointeur, sur le segment (paramètre écran corrigé de la perspective)
+    const [i, j] = R.e[be], A = sc[i], B = sc[j], L2 = (B.x - A.x) ** 2 + (B.y - A.y) ** 2 || 1;
+    const t = clamp(((p.x - A.x) * (B.x - A.x) + (p.y - A.y) * (B.y - A.y)) / L2, 0, 1);
+    const sp = S.view3d && A.w && B.w ? t * A.w / ((1 - t) * B.w + t * A.w) : t;
+    return { e: be, s: clamp(sp, 0, 1) };
   } if (l && Math.abs(l.u) <= 0.5 && Math.abs(l.v) <= 0.5) return { in: true, u: l.u, v: l.v };
   return null;
 }
+/** Abaissement (d) du point visé, cohérent avec le segment ou le pan visé. */
+const reD = (b, P) => P.k !== undefined ? b.roofE.n[P.k].d : P.e !== undefined ? (([i, j]) => b.roofE.n[i].d + (b.roofE.n[j].d - b.roofE.n[i].d) * P.s)(b.roofE.e[P.e]) : b.h - roofZAt(b, P.u, P.v);
 const reUV = (b, P) => P.k !== undefined ? b.roofE.n[P.k] : P.e !== undefined ? (([i, j]) => { const A = b.roofE.n[i], B = b.roofE.n[j]; return { u: A.u + (B.u - A.u) * P.s, v: A.v + (B.v - A.v) * P.s }; })(b.roofE.e[P.e]) : P;
 /** Extrémité de la ligne en cours : accrochage, puis parallèle aux côtés si l'angle est faible (< 8°). */
 function reTarget(b, A, p) {
@@ -2769,11 +2840,61 @@ function reTarget(b, A, p) {
   }
   return B;
 }
+/** Triangles 3D des immeubles projetés (pour savoir ce qui est caché). */
+function projTris() {
+  const ppm = pxPerM(), T = [], g = { pts: [], v(p) { this.pts.push(p); if (this.pts.length === 3) { T.push(this.pts); this.pts = []; } }, wall(p0, p1, p2, p3) { const q = [p0, p1, p2, p3]; for (const k of [0, 1, 2, 0, 2, 3]) this.v(q[k]); } };
+  for (const b of S.showProj ? S.buildings : []) { const pg = projGeom(b); buildingGeo(g, b, pg.foot * ppm, pg.ground * ppm, ppm); }
+  return T;
+}
+/** Le point P est-il caché depuis l'œil par l'un des triangles ? */
+function hiddenPt(eye, P, T, tol) {
+  const d = v3.sub(P, eye), L = Math.hypot(...d), dir = v3.mul(d, 1 / L);
+  for (const [a, b, c] of T) {
+    const e1 = v3.sub(b, a), e2 = v3.sub(c, a), h = v3.cross(dir, e2), det = v3.dot(e1, h); if (Math.abs(det) < 1e-9) continue;
+    const f = 1 / det, s = v3.sub(eye, a), u = f * v3.dot(s, h); if (u < -1e-6 || u > 1 + 1e-6) continue;
+    const q = v3.cross(s, e1), w = f * v3.dot(dir, q); if (w < -1e-6 || u + w > 1 + 1e-6) continue;
+    const t = f * v3.dot(e2, q); if (t > 1e-3 && t < L - tol) return true;
+  }
+  return false;
+}
+/** Segment 3D A → B découpé en morceaux visibles / cachés : [[t0, t1, caché], …]. */
+function edgeVis(eye, A, B, T, tol, n = 14) {
+  const out = []; let cur = null;
+  for (let k = 0; k < n; k++) {
+    const t = (k + 0.5) / n, h = hiddenPt(eye, [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t], T, tol);
+    if (cur && cur[2] === h) cur[1] = (k + 1) / n; else { cur = [k / n, (k + 1) / n, h]; out.push(cur); }
+  }
+  return out;
+}
+const rWorld3 = (b, nd) => { const w = rWorld(b, nd), pg = projGeom(b), ppm = pxPerM(); return [w.x, (pg.foot + rz(b, nd)) * ppm, w.y]; };
+/** Arêtes des toits édités, en foncé (3D) ; pendant l'édition, les parties cachées en pointillés. */
+function strokeRoofEdges3(ctx, ci, b, T, style) {
+  const R = b.roofE, tol = 0.08 * pxPerM(), W = R.n.map(nd => rWorld3(b, nd));
+  R.e.forEach(([i, j, bd], ei) => {
+    if (!style.all && bd === 1) return;
+    for (const [t0, t1, h] of edgeVis(ci.eye, W[i], W[j], T, tol)) {
+      if (h && !style.dash) continue;
+      const P = t => toScreen3(ci.VP, [W[i][0] + (W[j][0] - W[i][0]) * t, W[i][1] + (W[j][1] - W[i][1]) * t, W[i][2] + (W[j][2] - W[i][2]) * t]);
+      const a = P(t0), c = P(t1); if (!a || !c) continue;
+      if (style.halo && style.halo[ei] && !h) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
+      ctx.setLineDash(h ? [4, 4] : []); ctx.globalAlpha = h ? 0.75 : 1;
+      ctx.strokeStyle = style.col(bd); ctx.lineWidth = h ? 1.5 : style.w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+  });
+}
+function drawRoofEdges3(ctx, ci) {
+  const L = (S.showProj ? S.buildings : []).filter(b => b.roofE && b.id !== S.roofEdit && b.roofE.e.some(e => e[2] !== 1)); if (!L.length) return;
+  const T = projTris(); ctx.lineCap = 'round';
+  for (const b of L) strokeRoofEdges3(ctx, ci, b, T, { col: () => 'rgba(35,18,6,0.85)', w: 1.4 });
+  ctx.lineCap = 'butt';
+}
 function drawRoofEditor(ctx, ci) {
   const b = roofB(); if (!b) return;
   const R = b.roofE, mv = roofMovable(b), sc = R.n.map(nd => reScreen(b, nd, ci));
   ctx.lineCap = 'round';
-  R.e.forEach(([i, j, bd], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return;
+  if (ci && S.showProj) strokeRoofEdges3(ctx, ci, b, projTris(), { all: true, dash: true, halo: mv.edges, col: bd => bd ? BLD_DARK : '#7c2d12', w: 2 });
+  else R.e.forEach(([i, j, bd], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return;
     if (mv.edges[ei]) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); }
     ctx.strokeStyle = bd ? BLD_DARK : '#7c2d12'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); });
   sc.forEach((q, k) => { if (!q) return;
@@ -2783,12 +2904,12 @@ function drawRoofEditor(ctx, ci) {
   const hv = D0 => { if (!D0) return; ctx.strokeStyle = 'rgba(14,165,233,0.9)';
     if (D0.k !== undefined && sc[D0.k]) { ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(sc[D0.k].x, sc[D0.k].y, 10, 0, 7); ctx.stroke(); }
     else if (D0.e !== undefined && R.e[D0.e]) { const [i, j] = R.e[D0.e], A = sc[i], B = sc[j]; if (A && B) { ctx.lineWidth = 8; ctx.globalAlpha = 0.55; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); ctx.globalAlpha = 1;
-      const uv = reUV(b, D0), q = reScreen(b, { ...uv, d: b.h - roofZAt(b, uv.u, uv.v) }, ci); if (q) { ctx.fillStyle = 'rgba(14,165,233,1)'; ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, 7); ctx.fill(); } } } };
+      const uv = reUV(b, D0), q = reScreen(b, { ...uv, d: reD(b, D0) }, ci); if (q) { ctx.fillStyle = 'rgba(14,165,233,1)'; ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, 7); ctx.fill(); } } } };
   hv(S.reDrag ? S.reDrag.B : S.reHover); if (S.reDrag) hv(S.reDrag.A);
   ctx.lineCap = 'butt';
   const D = S.reDrag;
   if (D && D.B) {
-    const toSc = P => reScreen(b, { ...reUV(b, P), d: P.k !== undefined ? R.n[P.k].d : b.h - roofZAt(b, reUV(b, P).u, reUV(b, P).v) }, ci);
+    const toSc = P => reScreen(b, { ...reUV(b, P), d: reD(b, P) }, ci);
     const a = toSc(D.A), c = toSc(D.B);
     if (a && c) {
       ctx.setLineDash([6, 4]); ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); ctx.setLineDash([]);
@@ -2857,6 +2978,11 @@ function roofContext(p, cx, cy) {
       else { actLog('Toit : décrochement'); status('Pan décroché : réglez sa hauteur (molette) ; un mur vertical le sépare du reste.', true); }
       closePop(); S.dirty = true; roofContext(p, cx, cy);
     });
+    if (f) {
+      const mine = c => roofFaceAt(b, c.u, c.v) === fk, cur = () => { const c = (R.fc || []).filter(mine).pop(); return c ? c.col : b.roofCol; };
+      m.color('Couleur du pan', cur, v => { roofPush(b); R.fc = (R.fc || []).filter(c => !mine(c)); R.fc.push({ u: h.u, v: h.v, col: v }); S.dirty = true; });
+      m.color('Couleur de tout le toit', () => b.roofCol, v => { b.roofCol = v; R.fc = []; S.dirty = true; });
+    }
     m.sep();
     m.button('Toit plat (réinitialiser)', () => { roofPush(b); roofInit(b); closePop(); S.dirty = true; });
     m.button('Terminer l\'édition', () => { closePop(); roofEditStop(); });
@@ -2868,8 +2994,7 @@ function roofContext(p, cx, cy) {
 function roofDown(p) {
   const b = roofB(); if (!b) return false;
   const h = reHit(b, p); if (!h) return false;
-  if (h.in) return true;   // dans un pan : rien (pas de déplacement de l'immeuble pendant l'édition)
-  S.reDrag = { A: h, B: null }; return true;
+  S.reDrag = { A: h.in ? { u: h.u, v: h.v } : h, B: null }; return true;   // depuis un point libre : forme indépendante (cheminée…)
 }
 /** Survol dans l'éditeur (sans bouton) : met en évidence le point ou le segment visé. */
 function roofHover(p) { const b = roofB(); if (!b) return; const h = reHit(b, p), nh = h && !h.in ? h : null; if (JSON.stringify(nh) !== JSON.stringify(S.reHover)) { S.reHover = nh; S.dirty = true; } }
@@ -3348,7 +3473,7 @@ function draw3d() {
 }
 function toScreen3(VP, p, cw = CW, ch = CH) {
   const c = m4pt(VP, p); if (c[3] <= 1e-6) return null;
-  return { x: (c[0] / c[3] * 0.5 + 0.5) * cw, y: (0.5 - c[1] / c[3] * 0.5) * ch };
+  return { x: (c[0] / c[3] * 0.5 + 0.5) * cw, y: (0.5 - c[1] / c[3] * 0.5) * ch, w: c[3] };
 }
 function overlay3d(ci, sun, ctx = octx, k = DPR) {
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, CW, CH);
@@ -3371,7 +3496,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
     }
   }
   if (S.mode === 'select') drawHandles3(ctx, ci);
-  drawSiteHandles(ctx, q => scr3(ci, q)); drawRuler(ctx, q => scr3(ci, q, 0.3)); drawRoofEditor(ctx, ci);
+  drawSiteHandles(ctx, q => scr3(ci, q)); drawRuler(ctx, q => scr3(ci, q, 0.3)); drawRoofEdges3(ctx, ci); drawRoofEditor(ctx, ci);
   // boussole (nord projeté à l'écran) et cadran solaire
   const o = toScreen3(ci.VP, ci.target);
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
@@ -3693,7 +3818,10 @@ function tickBody(now) {
   if (S.playing) {
     S.minute += S.playSpeed * dt; S.dMin = S.minute;
     const ev = dayEvents(S.day, S.utcMode), m = mod(S.minute, 1440);
-    if (ev.rise !== null && ev.set !== null && ev.set > ev.rise && (m > ev.set + 2 || m < ev.rise)) { S.minute += mod(ev.rise - m, 1440); S.dMin = S.minute; }
+    if (S.nightT > 0) { S.minute -= S.playSpeed * dt; S.dMin = S.minute; S.nightT -= dt; if (S.nightT <= 0) { const m2 = mod(S.minute, 1440); S.minute += mod(ev.rise - m2, 1440); S.dMin = S.minute; } }
+    else if (ev.rise !== null && ev.set !== null && ev.set > ev.rise && (m > ev.set + 2 || m < ev.rise)) {   // nuit : affichée une seconde, puis lever du soleil
+      S.minute += mod(ev.set + 45 - m, 1440) - (mod(ev.set + 45 - m, 1440) > 720 ? 1440 : 0); S.dMin = S.minute; S.nightT = 1;
+    }
     syncTimeOnly();
   }
   const k = 1 - Math.exp(-dt * 10);
