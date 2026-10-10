@@ -2560,7 +2560,8 @@ function roofFaces(b) {
     const a = P[L[0]], c = P[L[1]], d = Math.hypot(c.x - a.x, c.y - a.y) || 1, tp = { x: (a.x + c.x) / 2 - (c.y - a.y) / d * 0.01, y: (a.y + c.y) / 2 + (c.x - a.x) / d * 0.01 };
     let best = -1, ba = Infinity;
     faces.forEach((f, fi) => { const Q = unspike(f).map(i => P[i]); if (!pointInPoly(tp, Q)) return; const A = Math.abs(polyArea(Q)); if (A < ba) { ba = A; best = fi; } });
-    if (best >= 0) holes[best].push(L);
+    if (best >= 0) { const Q = unspike(faces[best]).map(i => P[i]);   // trou seulement si la forme est entièrement dans le pan (sinon elle le chevauche)
+      if (L.every(i => pointInPoly(P[i], Q)) && !L.some((v, k) => Q.some((q, m) => { const x = segX(P[v], P[L[(k + 1) % L.length]], q, Q[(m + 1) % Q.length]); return x && x.t > 1e-6 && x.t < 1 - 1e-6 && x.s > 1e-6 && x.s < 1 - 1e-6; }))) holes[best].push(L); }
   }
   R._f = faces; R._h = holes; R._fv = R.ver; return faces;
 }
@@ -2671,11 +2672,12 @@ function roofAddLine(b, A, B) {
   // composante de chaque extrémité ; un point libre appartient au pan qui le contient, sauf s'il prolonge une forme encore ouverte (cheminée en cours)
   const cc = roofComps(b), hasFace = c => roofFaces(b).some(f => cc[f[0]] === c);
   const faceComp = k => { const fk = roofFaceAt(b, R.n[k].u, R.n[k].v); return fk >= 0 ? cc[roofFaces(b)[fk][0]] : cc[k]; };
-  const eff = (k, o) => !isolated(k) ? cc[k] : !isolated(o) && !hasFace(cc[o]) ? cc[o] : faceComp(k);
+  // deux points libres : forme indépendante (cheminée…), qui ne s'accroche pas aux lignes qu'elle croise
+  const eff = (k, o) => !isolated(k) ? cc[k] : isolated(o) ? cc[k] : !hasFace(cc[o]) ? cc[o] : faceComp(k);
   const ca = eff(ia, ib), cb = eff(ib, ia);
   if (ca !== cb && hasFace(ca) && hasFace(cb)) { status('Une ligne ne peut pas relier deux parties décrochées du toit.', true); roofClean(b); return; }
   const comp = hasFace(ca) ? ca : cb;
-  const pa = rmx(b, R.n[ia]), pb = rmx(b, R.n[ib]), cuts = [];
+  const pa = rmx(b, R.n[ia]), pb = rmx(b, R.n[ib]), cuts = [], nA = R.n[ia];
   for (let ei = 0; ei < R.e.length; ei++) {
     const [i, j] = R.e[ei]; if (i === ia || j === ia || i === ib || j === ib || roofComps(b)[i] !== comp) continue;
     const x = segX(pa, pb, rmx(b, R.n[i]), rmx(b, R.n[j]));
@@ -2700,6 +2702,12 @@ function roofAddLine(b, A, B) {
     if (i !== j && !R.e.some(([a, c]) => (a === i && c === j) || (a === j && c === i))) R.e.push([i, j, 0]);
   }
   R.ver++; roofClean(b);
+  // forme indépendante refermée à cheval sur plusieurs pans : dessus mis à plat, au niveau de son point le plus haut
+  { const c2 = roofComps(b), k0 = R.n.findIndex(nd => nd === nA), cmp = k0 >= 0 ? c2[k0] : -1;
+    if (cmp >= 0 && !R.e.some(([i, , bd]) => bd && c2[i] === cmp)) {
+      const F = roofFaces(b).filter(f => c2[f[0]] === cmp);
+      if (F.length && F.some(f => !planarPts(facePts(b, f)))) { const ks = R.n.map((_, k) => k).filter(k => c2[k] === cmp), dm = Math.min(...ks.map(k => R.n[k].d)); for (const k of ks) R.n[k].d = dm; R.ver++; }
+    } }
 }
 function roofEdgeDeletable(b, ei) {
   const R = b.roofE; if (R.e[ei][2]) return false;
@@ -2829,9 +2837,11 @@ function buildingGeo(g, b, foot, gr, ppm) {
   roofFaces(b).forEach((f, fk) => {
     const L = faceWithHoles(b, fk); if (L.length < 3) return;
     const pts = L.map(i => rmx(b, R.n[i])), tri = earClip(pts);
-    const fcol = faceColor(b, fk) || roof;
+    const fcol = faceColor(b, fk) || roof, own = new Set(f), pl = fitPlane(facePts(b, f));
+    // sommets des trous (cheminée, puits…) : à la hauteur du pan qui les entoure, pas à celle de la forme
+    const zOf = k => { const nd = R.n[L[k]]; if (own.has(L[k]) || !pl) return rz(b, nd); const q = pts[k]; return pl.a * q.x + pl.b * q.y + pl.c; };
     for (const t of tri) {
-      const P = t.map(k => { const nd = R.n[L[k]], w = rWorld(b, nd); return [w.x, foot + rz(b, nd) * ppm, w.y]; });
+      const P = t.map(k => { const nd = R.n[L[k]], w = rWorld(b, nd); return [w.x, foot + zOf(k) * ppm, w.y]; });
       let n = v3.norm(v3.cross(v3.sub(P[1], P[0]), v3.sub(P[2], P[0]))); if (n[1] < 0) n = v3.mul(n, -1);
       for (const q of P) g.v(q, n, fcol, 0);
     }
