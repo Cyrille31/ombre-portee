@@ -2640,9 +2640,9 @@ function roofZOther(b, u, v, comp) {
 }
 function roofZAt(b, u, v) {
   if (!b.roofE) return b === S.building ? S.dH : b.h;
-  const k = roofFaceAt(b, u, v); if (k < 0) return b.h;
+  const Hb = b === S.building ? S.dH : b.h, k = roofFaceAt(b, u, v); if (k < 0) return Hb;
   const pl = fitPlane(facePts(b, roofFaces(b)[k])), p = rmx(b, { u, v });
-  return pl ? clamp(pl.a * p.x + pl.b * p.y + pl.c, 0.3, b.h) : Math.max(...facePts(b, roofFaces(b)[k]).map(q => q.z));
+  return pl ? clamp(pl.a * p.x + pl.b * p.y + pl.c, 0.3, Hb + 50) : Math.max(...facePts(b, roofFaces(b)[k]).map(q => q.z));
 }
 /** Sommet existant, ou créé sur un segment (coupé), ou libre à l'intérieur (posé sur le pan). */
 function roofNodeAt(b, P) {
@@ -2650,7 +2650,7 @@ function roofNodeAt(b, P) {
   if (P.k !== undefined) return P.k;
   if (P.e !== undefined) return roofSplit(b, P.e, P.s);
   const sn = snapRoof(b, P, 0.02); if (sn.k !== undefined) return sn.k; if (sn.e !== undefined) return roofSplit(b, sn.e, sn.s);   // point sur un segment : on le coupe
-  R.n.push({ u: clamp(P.u, -0.5, 0.5), v: clamp(P.v, -0.5, 0.5), d: b.h - roofZAt(b, P.u, P.v) }); R.ver++;
+  R.n.push({ u: clamp(P.u, -0.5, 0.5), v: clamp(P.v, -0.5, 0.5), d: (b === S.building ? S.dH : b.h) - roofZAt(b, P.u, P.v) }); R.ver++;
   return R.n.length - 1;
 }
 function roofSplit(b, ei, s) {
@@ -2906,11 +2906,30 @@ function reScreen(b, nd, ci) {
   const w = rWorld(b, nd);
   return S.view3d ? toScreen3(ci.VP, [w.x, reFoot(b) + rz(b, nd) * pxPerM(), w.y]) : toS(w);
 }
+/** Rayon du pointeur (3D) → point du pan le plus proche de l'œil (intersection exacte avec le plan de chaque pan). */
+function roofRayHit(b, p) {
+  if (!b.roofE) return null;
+  const { o, d } = ray3(p.x, p.y), ppm = pxPerM(), foot = reFoot(b) / ppm, R = b.roofE;
+  const loc = t => { const l = worldToLocal(b, o[0] + d[0] * t, o[2] + d[2] * t); return { x: l.x / ppm, y: -l.y / ppm, z: (o[1] + d[1] * t) / ppm - foot }; };
+  const A = loc(0), B = loc(1), dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z;
+  let best = null, bt = Infinity;
+  roofFaces(b).forEach((f, fk) => {
+    const pl = fitPlane(facePts(b, f)); if (!pl) return;
+    const den = dz - pl.a * dx - pl.b * dy; if (Math.abs(den) < 1e-12) return;
+    const t = (pl.a * A.x + pl.b * A.y + pl.c - A.z) / den; if (t <= 0 || t >= bt) return;
+    const q = { x: A.x + dx * t, y: A.y + dy * t }, P = i => rmx(b, R.n[i]);
+    if (!pointInPoly(q, unspike(f).map(P))) return;
+    if ((R._h[fk] || []).some(H => pointInPoly(q, H.map(P)))) return;   // dans un trou : c'est la forme incluse qui compte
+    bt = t; best = { u: q.x / (b.w / ppm), v: -q.y / (b.l / ppm) };
+  });
+  return best;
+}
 /** Pointeur → point (u, v) du toit. */
 function reLocal(b, p) {
   let w;
   if (!S.view3d) w = toW(p);
   else {
+    const hit = roofRayHit(b, p); if (hit) return hit;
     const ppm = pxPerM(), f = reFoot(b); let y = f + b.h * ppm;
     for (let k = 0; k < 4; k++) { w = planeHit(p.x, p.y, y); if (!w) return null; const l = worldToLocal(b, w.x, w.y); y = f + roofZAt(b, clamp(l.x / b.w, -0.5, 0.5), clamp(l.y / b.l, -0.5, 0.5)) * ppm; }
   }
@@ -2934,13 +2953,15 @@ function reHit(b, p) {
   return null;
 }
 /** Abaissement (d) du point visé, cohérent avec le segment ou le pan visé. */
-const reD = (b, P) => P.k !== undefined ? b.roofE.n[P.k].d : P.e !== undefined ? (([i, j]) => b.roofE.n[i].d + (b.roofE.n[j].d - b.roofE.n[i].d) * P.s)(b.roofE.e[P.e]) : b.h - roofZAt(b, P.u, P.v);
+const reD = (b, P) => P.k !== undefined ? b.roofE.n[P.k].d : P.e !== undefined ? (([i, j]) => b.roofE.n[i].d + (b.roofE.n[j].d - b.roofE.n[i].d) * P.s)(b.roofE.e[P.e]) : (b === S.building ? S.dH : b.h) - roofZAt(b, P.u, P.v);
 const reUV = (b, P) => P.k !== undefined ? b.roofE.n[P.k] : P.e !== undefined ? (([i, j]) => { const A = b.roofE.n[i], B = b.roofE.n[j]; return { u: A.u + (B.u - A.u) * P.s, v: A.v + (B.v - A.v) * P.s }; })(b.roofE.e[P.e]) : P;
 /** Extrémité de la ligne en cours : accrochage, puis parallèle aux côtés si l'angle est faible (< 8°). */
 function reTarget(b, A, p) {
   const h = reHit(b, p);
   let B = h && !h.in ? h : (() => { const l = reLocal(b, p); return l ? { u: clamp(l.u, -0.5, 0.5), v: clamp(l.v, -0.5, 0.5) } : null; })();
   if (!B || B.k !== undefined) return B;
+  // aimantations (parallèle, longueur du rectangle) : seulement si le point reste sous le pointeur (≤ 12 px à l'écran)
+  const B0 = B, ci = S.view3d ? camInfo() : null, near = Q => { const q = reScreen(b, { ...reUV(b, Q), d: reD(b, Q) }, ci); return q && Math.hypot(q.x - p.x, q.y - p.y) <= 12; };
   const a = rmx(b, reUV(b, A)), q = rmx(b, reUV(b, B)), ang = Math.atan2(q.y - a.y, q.x - a.x), m = mod(ang, Math.PI / 2), tol = 8 * D2R;
   if (m < tol || Math.PI / 2 - m < tol) {
     const axisX = Math.abs(Math.cos(ang)) > Math.abs(Math.sin(ang)), aUV = reUV(b, A);
@@ -2948,6 +2969,7 @@ function reTarget(b, A, p) {
       const [i, j] = b.roofE.e[B.e], P = rmx(b, b.roofE.n[i]), Q = rmx(b, b.roofE.n[j]), far = axisX ? { x: a.x + Math.sign(q.x - a.x) * 1e3, y: a.y } : { x: a.x, y: a.y + Math.sign(q.y - a.y) * 1e3 };
       const x = segX(a, far, P, Q); if (x && x.s >= 0 && x.s <= 1 && x.t > 0) B = { e: B.e, s: x.s };
     } else B = axisX ? { u: B.u, v: aUV.v } : { u: aUV.u, v: B.v };
+    if (!near(B)) B = B0;
   }
   // 3e côté d'un rectangle (cheminée…) : arrêt quand sa longueur atteint celle du 1er côté
   if (A.k !== undefined && B.e === undefined) {
@@ -2955,7 +2977,7 @@ function reTarget(b, A, p) {
     if (n1.length === 1) { const n2 = nb(n1[0]).filter(x => x !== A.k);
       if (n2.length === 1) {
         const P0 = rmx(b, R.n[n2[0]]), P1 = rmx(b, R.n[n1[0]]), a = rmx(b, R.n[A.k]), q = rmx(b, reUV(b, B)), L1 = dist(P0, P1), L = dist(a, q);
-        if (L > 1e-6 && Math.abs(L - L1) < Math.max(0.3, 0.08 * L1)) { const k = L1 / L, x = a.x + (q.x - a.x) * k, y = a.y + (q.y - a.y) * k; B = { u: x / (b.w / pxPerM()), v: -y / (b.l / pxPerM()), stop: true }; }
+        if (L > 1e-6 && Math.abs(L - L1) < Math.max(0.3, 0.08 * L1)) { const k = L1 / L, x = a.x + (q.x - a.x) * k, y = a.y + (q.y - a.y) * k; const Bs = { u: x / (b.w / pxPerM()), v: -y / (b.l / pxPerM()), stop: true }; if (near(Bs)) B = Bs; }
       } }
   }
   return B;
