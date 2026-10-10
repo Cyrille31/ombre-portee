@@ -326,7 +326,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'ortho', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, noonClick: 'legal', dialZoom: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'ortho', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -856,7 +856,7 @@ function render(ctx, W, H, v, opt = {}) {
   }
   const BL = S.showProj ? S.buildings : [], b = S.showProj ? S.building : null, ppm = pxPerM(), hM = b ? hOf(b) : 0, sun = curSun(), px = 1 / v.s;
   // ombres de tous les immeubles en un seul tracé (union : pas de double assombrissement)
-  const shadowsPath = s => { ctx.beginPath(); let any = false; for (const bb of BL) { const sp = shadowPolyB(bb, s); if (!sp) continue; any = true; sp.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
+  const shadowsPath = (s, L = BL) => { ctx.beginPath(); let any = false; for (const bb of L) { const sp = shadowPolyB(bb, s); if (!sp) continue; any = true; sp.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
   ctx.save(); { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); ctx.setTransform(k * v.s * c, k * v.s * sn, -k * v.s * sn, k * v.s * c, k * v.ox, k * v.oy); }
   ctx.imageSmoothingEnabled = v.s < 3;
   ctx.filter = bgFilter(); ctx.drawImage(S.clean, 0, 0); ctx.filter = 'none';
@@ -875,10 +875,12 @@ function render(ctx, W, H, v, opt = {}) {
       if (S.showProjShadow && shadowsPath(sun)) { ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke(); }
     }
     for (const bb of BL) {
-      polyPath(ctx, corners(bb)); ctx.globalAlpha = bb === b ? 0.88 : 0.65; ctx.fillStyle = bb.roofCol; ctx.fill(); ctx.globalAlpha = 1;
+      polyPath(ctx, corners(bb)); if (!bb.roofE) { ctx.globalAlpha = bb === b ? 0.88 : 0.65; ctx.fillStyle = bb.roofCol; ctx.fill(); ctx.globalAlpha = 1; }
       ctx.strokeStyle = BLD_DARK; ctx.lineWidth = (bb === b ? 2 : 1.2) * px; ctx.stroke();
-      if (bb.roofE) { ctx.strokeStyle = 'rgba(35,18,6,0.95)'; ctx.lineWidth = 1.6 * px; for (const [i, j, bd] of bb.roofE.e) if (bd !== 1) { const A = rWorld(bb, bb.roofE.n[i]), B = rWorld(bb, bb.roofE.n[j]); ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); } }
+      if (bb.roofE) drawRoof2D(ctx, bb, px);
     }
+  } else if (S.building && S.showProjShadow && shadowsPath(sun, S.buildings)) {   // immeubles masqués : leur ombre reste visible
+    ctx.fillStyle = `rgba(25,25,50,${S.opacity})`; ctx.fill(); ctx.strokeStyle = 'rgba(25,25,50,0.8)'; ctx.lineWidth = 1 * px; ctx.stroke();
   }
   ctx.restore();
   ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -1194,6 +1196,7 @@ cv.addEventListener('dblclick', e => {   // double-clic : poignées de l'immeubl
 });
 cv.addEventListener('wheel', e => {
   e.preventDefault(); if (!S.clean) return;
+  if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(evPos(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = evPos(e), f = Math.exp(-normWheel(e) * 0.0015), w = toW(p);
   V.s = clamp(V.s * f, 0.02, 40); { const c = Math.cos(V.rot), sn = Math.sin(V.rot); V.ox = p.x - V.s * (w.x * c - w.y * sn); V.oy = p.y - V.s * (w.x * sn + w.y * c); } S.dirty = true;
@@ -1536,7 +1539,7 @@ function projectData() {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, noonClick: S.noonClick, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1556,7 +1559,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = im.width; cc.height = im.height; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'showProjShadow', 'nbFac', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'showProjShadow', 'nbFac', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase', 'noonClick'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -1893,9 +1896,15 @@ function menuTree(t, cx, cy) {
   });
 }
 function menuDial(kind, cx, cy) {
-  if (kind === 'sundial') openMenu(cx, cy, 'Cadran solaire — pas de la molette', m => {
+  if (kind === 'sundial') openMenu(cx, cy, 'Cadran solaire', m => {
+    m.label('Pas de la molette');
     m.choices('', [['½ h', 0.5], ['1 h', 1], ['2 h', 2], ['3 h', 3], ['6 h', 6]], () => S.dialStep, v => S.dialStep = v);
     m.num('Pas', () => S.dialStep, v => S.dialStep = v, { unit: 'h', step: 0.5, fine: 0.25, min: 0.25, max: 12 });
+    m.label('Un clic sur le cadran met à');
+    m.choices('', [['Midi (heure légale)', 'legal'], ['Midi solaire', 'solar']], () => S.noonClick || 'legal', v => S.noonClick = v);
+    S._dzInp = m.num('Taille du cadran', () => Math.round((S.dialZoom || 1) * 100), v => { S.dialZoom = clamp(v / 100, 0.5, 20); S.dirty = true; }, { unit: '%', step: 25, fine: 5, min: 50, max: 2000 });
+    m.hint('Molette sur la vue : agrandir ou réduire le cadran (pour lire sa devise). Il reprend sa taille à la fermeture de ce menu.');
+    S.dialZoomMenu = true; m.onClose(() => { S.dialZoomMenu = false; S.dialZoom = 1; S.dirty = true; });
   });
   else if (kind === 'calendar') openMenu(cx, cy, 'Calendrier — pas de la molette', m => {
     m.choices('', CAL_STEPS.map(([t, v]) => [t, v]), () => S.calStep, v => S.calStep = v);
@@ -2353,6 +2362,11 @@ function drawDials(ctx, W, H, n, sun) {
   haloText(ctx, sun.alt > 0 ? '☀ ' + fmtNum(sun.alt, 0) + '°  az ' + fmtNum(sun.az, 0) + '°' : 'soleil couché', cx, cy + R + 14);
   // cadran solaire horizontal, orienté comme le plan : l'ombre du style a la direction des ombres des immeubles
   const rot = Math.atan2(nx, -ny); L.rot = rot; dialRot = rot;
+  const zD = S.dialZoom || 1; ctx.save();
+  if (zD !== 1) {   // agrandi depuis son menu (lecture de la devise), en glissant vers le centre de la vue
+    const t = clamp((zD - 1) / 1.5, 0, 1), zx = sx + (W / 2 - sx) * t, zy = sy + (H / 2 - sy) * t;
+    ctx.translate(zx, zy); ctx.scale(zD, zD); ctx.translate(-sx, -sy);
+  }
   // pierre patinée, double filet
   const gr = ctx.createRadialGradient(sx - R * 0.3, sy - R * 0.35, R * 0.1, sx, sy, R);
   gr.addColorStop(0, '#fbf3df'); gr.addColorStop(0.75, '#efe0bd'); gr.addColorStop(1, '#dcc796');
@@ -2382,7 +2396,7 @@ function drawDials(ctx, W, H, n, sun) {
     for (const n of nums) {
       if (placed.some(o => Math.abs(mod(n.ang - o.ang + Math.PI, 2 * Math.PI) - Math.PI) * rr < (n.w + o.w) / 2 + 2)) continue;
       placed.push(n);
-      ctx.save(); ctx.translate(sx + n.ux * rr, sy + n.uy * rr); ctx.rotate(n.ang + Math.PI / 2);
+      ctx.save(); ctx.translate(sx + n.ux * rr, sy + n.uy * rr); ctx.rotate(n.ang + (n.uy > 0.05 ? -Math.PI / 2 : Math.PI / 2));   // jamais à l'envers
       ctx.fillStyle = '#4a3a17'; ctx.fillText(ROM[n.h % 12], 0, 0); ctx.restore();
     } }
   // devise, en petit le long du bord bas
@@ -2401,6 +2415,7 @@ function drawDials(ctx, W, H, n, sun) {
     ctx.fillStyle = '#9c7b3a'; ctx.strokeStyle = '#5c4518'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(sx + qx * 3, sy + qy * 3); ctx.lineTo(sx + gx * Lg, sy + gy * Lg); ctx.lineTo(sx - qx * 3, sy - qy * 3); ctx.closePath(); ctx.fill(); ctx.stroke(); }
   ctx.fillStyle = '#5c4518'; ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 7); ctx.fill();
+  ctx.restore();
   ctx.font = 'bold 12px system-ui, sans-serif'; ctx.fillStyle = '#334';
   // calendrier : douze mois, flèche sur le jour courant, repères des solstices et équinoxes
   const { kx, ky, R3 } = L, yr = fromDays(S.day).y;
@@ -2486,6 +2501,10 @@ function dialWheelEvt(kind, e) {
   else if (kind === 'calendar') calStepBy(dir);
   else rotateView(dir * S.compStep * D2R);
 }
+function dialZoomWheel(e) {   // menu du cadran ouvert : la molette change sa taille (en % de la taille actuelle)
+  S.dialZoom = clamp((S.dialZoom || 1) * Math.exp(-normWheel(e) * 0.0015), 0.5, 20); S.dirty = true;
+  if (S._dzInp) S._dzInp.value = Math.round(S.dialZoom * 100);
+}
 function dialWheel(dir) {
   stopPlay();
   const st = Math.max(15, Math.round(S.dialStep * 60)), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);
@@ -2494,9 +2513,9 @@ function dialWheel(dir) {
 }
 function dialUp(d) {
   if (d.moved || d.kind === 'calendar') return;
-  if (d.kind === 'sundial') {   // midi solaire
+  if (d.kind === 'sundial') {   // midi : heure légale (par défaut) ou midi solaire, au choix dans le menu du cadran
     stopPlay();
-    const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + Math.round(ev.noon); changed();
+    const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + (S.noonClick === 'solar' ? Math.round(ev.noon) : 720); changed();
   } else rotateView(null);
 }
 
@@ -2516,7 +2535,7 @@ function roofFaces(b) {
   for (const [i, j] of R.e) { adj[i].push(j); adj[j].push(i); }
   const P = R.n.map(nd => rmx(b, nd));
   adj.forEach((l, i) => l.sort((a, c) => Math.atan2(P[a].y - P[i].y, P[a].x - P[i].x) - Math.atan2(P[c].y - P[i].y, P[c].x - P[i].x)));
-  const seen = new Set(), faces = [];
+  const seen = new Set(), faces = [], negs = [];
   for (const [i0, j0] of R.e) for (const [a0, b0] of [[i0, j0], [j0, i0]]) {
     if (seen.has(a0 + ',' + b0)) continue;
     const loop = []; let a = a0, c = b0, guard = 0;
@@ -2528,8 +2547,21 @@ function roofFaces(b) {
     // pan entièrement bordé de lignes « côté reste » d'un décrochement : c'est l'emplacement du pan décroché (trou)
     const hole = loop.every((v, k) => { const w = loop[(k + 1) % loop.length], e = R.e.find(([i, j]) => (i === v && j === w) || (i === w && j === v)); return e && e[2] === 3; });
     if (ar > 1e-6 && !hole) faces.push(loop);
+    else if (ar < -1e-6) negs.push(loop);
   }
-  R._f = faces; R._fv = R.ver; return faces;
+  // contours intérieurs (sens horaire) hors bord du toit : trous du pan qui les entoure
+  const isB = (v, w) => R.e.some(([i, j, bd]) => bd === 1 && ((i === v && j === w) || (i === w && j === v)));
+  const holes = faces.map(() => []), seenH = new Set();
+  for (const L0 of negs) {
+    if (L0.some((v, k) => isB(v, L0[(k + 1) % L0.length]))) continue;
+    const L = unspike(L0); if (L.length < 3) continue;
+    const key = L.map(i => P[i].x.toFixed(3) + ',' + P[i].y.toFixed(3)).sort().join(';'); if (seenH.has(key)) continue; seenH.add(key);
+    const a = P[L[0]], c = P[L[1]], d = Math.hypot(c.x - a.x, c.y - a.y) || 1, tp = { x: (a.x + c.x) / 2 - (c.y - a.y) / d * 0.01, y: (a.y + c.y) / 2 + (c.x - a.x) / d * 0.01 };
+    let best = -1, ba = Infinity;
+    faces.forEach((f, fi) => { const Q = unspike(f).map(i => P[i]); if (!pointInPoly(tp, Q)) return; const A = Math.abs(polyArea(Q)); if (A < ba) { ba = A; best = fi; } });
+    if (best >= 0) holes[best].push(L);
+  }
+  R._f = faces; R._h = holes; R._fv = R.ver; return faces;
 }
 /** Composante (toit indépendant) de chaque sommet. */
 function roofComps(b) {
@@ -2583,8 +2615,11 @@ function planarPts(pts) { if (pts.length <= 3) return true; const pl = fitPlane(
 function roofMovable(b) {
   const R = b.roofE; if (R._mv === R.ver) return R._m;
   const F = roofFaces(b), test = set => F.every(f => !f.some(i => set.has(i)) || planarPts(facePts(b, f, i => set.has(i) ? 1 : 0)));
-  const nodes = R.n.map((_, i) => test(new Set([i])) && F.some(f => f.includes(i)));
-  const edges = R.e.map(([i, j]) => test(new Set([i, j])));
+  // ligne parcourue dans les deux sens par le même pan : elle s'arrête au milieu (reliée d'un seul côté)
+  const spur = new Set(); F.forEach(f => { const dd = new Set(f.map((v, k) => v + ',' + f[(k + 1) % f.length])); f.forEach((v, k) => { const w = f[(k + 1) % f.length]; if (dd.has(w + ',' + v)) spur.add(Math.min(v, w) + ',' + Math.max(v, w)); }); });
+  const isSpur = ([i, j]) => spur.has(Math.min(i, j) + ',' + Math.max(i, j));
+  const nodes = R.n.map((_, i) => test(new Set([i])) && F.some(f => f.includes(i)) && R.e.some(e => (e[0] === i || e[1] === i) && !isSpur(e)));
+  const edges = R.e.map(e => test(new Set([e[0], e[1]])) && !isSpur(e));
   const faces = F.map(f => test(new Set(f)));
   R._m = { nodes, edges, faces }; R._mv = R.ver; return R._m;
 }
@@ -2665,6 +2700,11 @@ function roofAddLine(b, A, B) {
   }
   R.ver++; roofClean(b);
 }
+function roofEdgeDeletable(b, ei) {
+  const R = b.roofE; if (R.e[ei][2]) return false;
+  const t = { ...b, roofE: JSON.parse(roofSnap(b)) }; roofDelEdge(t, ei);
+  return roofFaces(t).every(f => planarPts(facePts(t, f)));
+}
 function roofDelEdge(b, ei) { const R = b.roofE; if (R.e[ei][2]) return; R.e.splice(ei, 1); R.ver++; roofClean(b); }
 /** Suppression d'un point : extrémité d'une ligne en attente, ou point au milieu d'une ligne droite. */
 function roofNodeDeletable(b, k) {
@@ -2729,6 +2769,21 @@ function earClip(pts) {
   return out;
 }
 /** Couleur propre d'un pan (repère posé dans le pan), sinon celle du toit. */
+/** Contour d'un pan avec ses trous reliés par des « ponts » (indices de sommets), pour la triangulation. */
+function faceWithHoles(b, fk) {
+  const R = b.roofE, F = roofFaces(b), P = i => rmx(b, R.n[i]); let out = unspike(F[fk]);
+  const hs = (R._h && R._h[fk] || []).slice().sort((x, y) => Math.max(...y.map(i => P(i).x)) - Math.max(...x.map(i => P(i).x)));
+  const crosses = (a, c, segs) => segs.some(([p, q]) => { if ([p, q].some(z => Math.hypot(z.x - a.x, z.y - a.y) < 1e-9 || Math.hypot(z.x - c.x, z.y - c.y) < 1e-9)) return false; const x = segX(a, c, p, q); return x && x.t > 1e-7 && x.t < 1 - 1e-7 && x.s > 1e-7 && x.s < 1 - 1e-7; });
+  hs.forEach((H, hi) => {
+    const segs = []; const add = L => L.forEach((v, k) => segs.push([P(v), P(L[(k + 1) % L.length])]));
+    add(out); hs.forEach((G, gi) => { if (gi >= hi) add(G); });
+    let bi = -1, bj = -1, bd = Infinity;
+    H.forEach((hv, i) => out.forEach((ov, j) => { const a = P(hv), c = P(ov), d = Math.hypot(a.x - c.x, a.y - c.y); if (d < bd && !crosses(a, c, segs)) { bd = d; bi = i; bj = j; } }));
+    if (bi < 0) return;
+    out = out.slice(0, bj + 1).concat(H.slice(bi), H.slice(0, bi + 1), out.slice(bj));
+  });
+  return out;
+}
 const polyArea = P => P.reduce((s, p, k) => { const q = P[(k + 1) % P.length]; return s + p.x * q.y - q.x * p.y; }, 0) / 2;
 function faceColor(b, fk) { const fc = b.roofE && b.roofE.fc; if (!fc) return null; for (let k = fc.length - 1; k >= 0; k--) if (roofFaceAt(b, fc[k].u, fc[k].v) === fk) return hexRGB(fc[k].col); return null; }
 /** Géométrie 3D de l'immeuble : murs (avec façade) et toit (plat ou édité). */
@@ -2771,7 +2826,7 @@ function buildingGeo(g, b, foot, gr, ppm) {
     }
   }
   roofFaces(b).forEach((f, fk) => {
-    const L = unspike(f); if (L.length < 3) return;
+    const L = faceWithHoles(b, fk); if (L.length < 3) return;
     const pts = L.map(i => rmx(b, R.n[i])), tri = earClip(pts);
     const fcol = faceColor(b, fk) || roof;
     for (const t of tri) {
@@ -2780,6 +2835,51 @@ function buildingGeo(g, b, foot, gr, ppm) {
       for (const q of P) g.v(q, n, fcol, 0);
     }
   });
+}
+/** Éclairage d'un pan (même formule que le rendu 3D, hors ombres portées). */
+function shadeK(n, L, up, shK) {
+  const nd = v3.dot(n, L); if (!up) return 1; if (nd <= 0) return shK;
+  return n[1] > 0.5 ? shK + (1 - shK) * (n[1] > 0.995 ? 1 : clamp(nd / Math.max(L[1], 0.15), 0, 1.3)) : shK * 0.85 + (1 - shK * 0.85) * (0.35 + 0.65 * nd);
+}
+/** Normale (repère 3D) et couleur de chaque pan d'un toit édité. */
+function roofFaceInfo(b) {
+  const R = b.roofE, roof = hexRGB(b.roofCol);
+  return roofFaces(b).map((f, fk) => {
+    const W = unspike(f).map(i => rWorld3(b, R.n[i])); let n = [0, 0, 0];
+    W.forEach((a, k) => { const c = W[(k + 1) % W.length]; n[0] += (a[1] - c[1]) * (a[2] + c[2]); n[1] += (a[2] - c[2]) * (a[0] + c[0]); n[2] += (a[0] - c[0]) * (a[1] + c[1]); });
+    n = v3.norm(n); if (n[1] < 0) n = v3.mul(n, -1);
+    return { n, col: faceColor(b, fk) || roof };
+  });
+}
+/** Pans de part et d'autre de chaque ligne (y compris le pan qui entoure une forme incluse). */
+function roofEdgeFaces(b) {
+  const R = b.roofE; roofFaces(b); if (R._efv === R.ver) return R._ef;
+  const use = new Map(), add = (L, fk) => L.forEach((v, k) => { const w = L[(k + 1) % L.length], key = Math.min(v, w) + ',' + Math.max(v, w); const a = use.get(key) || []; if (!a.includes(fk)) a.push(fk); use.set(key, a); });
+  R._f.forEach((f, fk) => { add(f, fk); (R._h[fk] || []).forEach(H => add(H, fk)); });
+  R._ef = R.e.map(([i, j]) => use.get(Math.min(i, j) + ',' + Math.max(i, j)) || []); R._efv = R.ver; return R._ef;
+}
+/** Couleur des arêtes : un peu plus sombre que la moyenne des deux pans (éclairés) qu'elles séparent. */
+function roofEdgeCols(b, L, up, shK, litAt) {
+  const FI = roofFaceInfo(b), EF = roofEdgeFaces(b);
+  return EF.map((fs, ei) => {
+    if (!fs.length) return 'rgba(35,18,6,0.85)';
+    const lit = litAt ? litAt(ei) : true, c = [0, 0, 0];
+    for (const fk of fs) { const k = lit ? shadeK(FI[fk].n, L, up, shK) : shK; for (let q = 0; q < 3; q++) c[q] += FI[fk].col[q] * k / fs.length; }
+    return `rgb(${c.map(x => Math.round(clamp(x * 0.78, 0, 1) * 255)).join(',')})`;
+  });
+}
+/** Toit édité en 2D : pans (couleur, léger dégradé selon le soleil) et arêtes. */
+function drawRoof2D(ctx, bb, px) {
+  const R = bb.roofE, sun = curSun(), up = sun.alt > 0.05, L = up ? sunVec(sun) : [0, 1, 0], FI = roofFaceInfo(bb), F = roofFaces(bb);
+  ctx.globalAlpha = bb === S.building ? 0.88 : 0.65;
+  F.forEach((f, fk) => {
+    ctx.beginPath(); for (const Lp of [unspike(f), ...(R._h[fk] || [])]) Lp.forEach((i, k) => { const w = rWorld(bb, R.n[i]); k ? ctx.lineTo(w.x, w.y) : ctx.moveTo(w.x, w.y); }), ctx.closePath();
+    const k = shadeK(FI[fk].n, L, up, 0.7); ctx.fillStyle = `rgb(${FI[fk].col.map(x => Math.round(clamp(x * k, 0, 1) * 255)).join(',')})`; ctx.fill('evenodd');
+  });
+  ctx.globalAlpha = 1;
+  const cols = roofEdgeCols(bb, L, up, 0.7); ctx.lineWidth = 2.2 * px; ctx.lineCap = 'round';
+  R.e.forEach(([i, j, bd], ei) => { if (bd === 1) return; const A = rWorld(bb, R.n[i]), B = rWorld(bb, R.n[j]); ctx.strokeStyle = cols[ei]; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); });
+  ctx.lineCap = 'butt';
 }
 /** Ombre portée 2D d'un immeuble (enveloppe des ombres des sommets du toit). */
 function shadowPolyB(b, sun) {
@@ -2838,6 +2938,15 @@ function reTarget(b, A, p) {
       const x = segX(a, far, P, Q); if (x && x.s >= 0 && x.s <= 1 && x.t > 0) B = { e: B.e, s: x.s };
     } else B = axisX ? { u: B.u, v: aUV.v } : { u: aUV.u, v: B.v };
   }
+  // 3e côté d'un rectangle (cheminée…) : arrêt quand sa longueur atteint celle du 1er côté
+  if (A.k !== undefined && B.e === undefined) {
+    const R = b.roofE, nb = k => R.e.filter(([i, j]) => i === k || j === k).map(([i, j]) => i === k ? j : i), n1 = nb(A.k);
+    if (n1.length === 1) { const n2 = nb(n1[0]).filter(x => x !== A.k);
+      if (n2.length === 1) {
+        const P0 = rmx(b, R.n[n2[0]]), P1 = rmx(b, R.n[n1[0]]), a = rmx(b, R.n[A.k]), q = rmx(b, reUV(b, B)), L1 = dist(P0, P1), L = dist(a, q);
+        if (L > 1e-6 && Math.abs(L - L1) < Math.max(0.3, 0.08 * L1)) { const k = L1 / L, x = a.x + (q.x - a.x) * k, y = a.y + (q.y - a.y) * k; B = { u: x / (b.w / pxPerM()), v: -y / (b.l / pxPerM()), stop: true }; }
+      } }
+  }
   return B;
 }
 /** Triangles 3D des immeubles projetés (pour savoir ce qui est caché). */
@@ -2878,7 +2987,7 @@ function strokeRoofEdges3(ctx, ci, b, T, style) {
       const a = P(t0), c = P(t1); if (!a || !c) continue;
       if (style.halo && style.halo[ei] && !h) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
       ctx.setLineDash(h ? [4, 4] : []); ctx.globalAlpha = h ? 0.75 : 1;
-      ctx.strokeStyle = style.col(bd); ctx.lineWidth = h ? 1.5 : style.w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.strokeStyle = style.col(bd, ei); ctx.lineWidth = h ? 1.5 : style.w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
   });
@@ -2886,7 +2995,13 @@ function strokeRoofEdges3(ctx, ci, b, T, style) {
 function drawRoofEdges3(ctx, ci) {
   const L = (S.showProj ? S.buildings : []).filter(b => b.roofE && b.id !== S.roofEdit && b.roofE.e.some(e => e[2] !== 1)); if (!L.length) return;
   const T = projTris(); ctx.lineCap = 'round';
-  for (const b of L) strokeRoofEdges3(ctx, ci, b, T, { col: () => 'rgba(35,18,6,0.85)', w: 1.4 });
+  const sun = curSun(), up = sun.alt > 0.05, Ls = up ? sunVec(sun) : [0, 1, 0], shK = clamp(1 - S.opacity * 0.9, 0.05, 1), far = 1e5;
+  for (const b of L) {
+    const W = b.roofE.n.map(nd => rWorld3(b, nd));
+    const litAt = ei => { if (!up) return false; const [i, j] = b.roofE.e[ei], P = v3.mul(v3.add(W[i], W[j]), 0.5); return !hiddenPt(v3.add(P, v3.mul(Ls, far)), P, T, 0.08 * pxPerM()); };
+    const cols = roofEdgeCols(b, Ls, up, shK, litAt);
+    strokeRoofEdges3(ctx, ci, b, T, { col: (bd, ei) => cols[ei], w: 2.2 });
+  }
   ctx.lineCap = 'butt';
 }
 function drawRoofEditor(ctx, ci) {
@@ -2913,6 +3028,7 @@ function drawRoofEditor(ctx, ci) {
     const a = toSc(D.A), c = toSc(D.B);
     if (a && c) {
       ctx.setLineDash([6, 4]); ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); ctx.setLineDash([]);
+      if (D.B.stop) { ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.strokeRect(c.x - 6, c.y - 6, 12, 12); }   // arrêt : longueur du 1er côté
       const L = dist(rmx(b, reUV(b, D.A)), rmx(b, reUV(b, D.B))), t = fmtNum(L, 1) + ' m'; ctx.font = 'bold 12px system-ui, sans-serif';
       const w = ctx.measureText(t).width + 12; drawLabel(ctx, { x: (a.x + c.x) / 2 - w / 2, y: (a.y + c.y) / 2 - 24, w, h: 19 }, t, '#d6336c', null);
     }
@@ -2964,7 +3080,8 @@ function roofContext(p, cx, cy) {
     if (!mv.edges[h.e] && bd) return true;
     openMenu(cx, cy, bd === 1 ? 'Bord du toit' : bd ? 'Ligne de décrochement' : 'Ligne du toit', m => {
       if (mv.edges[h.e]) { m.num('Hauteur', top, v => shift(set, Math.max(0.3, v) - top()), { unit: 'm', big: true, max: H() + 50 }); hintTop(m); }
-      if (!bd) m.button('Supprimer la ligne', () => { roofPush(b); roofDelEdge(b, h.e); closePop(); S.dirty = true; });
+      if (!bd && roofEdgeDeletable(b, h.e)) m.button('Supprimer la ligne', () => { roofPush(b); roofDelEdge(b, h.e); closePop(); S.dirty = true; });
+      else if (!bd) m.hint('Cette ligne ne peut pas être supprimée : le pan obtenu serait gauche (non plan).');
       common(m);
     });
     return true;
@@ -3167,7 +3284,8 @@ void main() {
   vec3 base = tex ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
   if (vFac > 0.5 && abs(n.y) < 0.3) base = facade(base, vFac, vUV);
   // uShadowK : clarté à l'ombre, réglée par « Opacité de l'ombre »
-  if (n.y > 0.5) k = mix(uShadowK, 1.0, l);                                 // sol et toits
+  // sol et toits : un pan incliné s'éclaire selon l'angle du soleil (dégradé), relativement à un toit plat
+  if (n.y > 0.5) k = mix(uShadowK, 1.0, l * (tex || n.y > 0.995 ? 1.0 : clamp(nd / max(uSun.y, 0.15), 0.0, 1.3)));
   else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
   vec3 col = base * k;
   if (tex || tree) col = clamp((col * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste, après l'éclairage (comme en 2D)
@@ -3372,7 +3490,7 @@ function projGeom(b = S.building) {
 function projTop(b) { const g = projGeom(b); return g ? g.top * pxPerM() : 0; }
 function buildProject() {
   const g = new Geo(), ppm = pxPerM();
-  for (const b of S.showProj ? S.buildings : []) {
+  for (const b of S.buildings) {   // construits même masqués : ils portent encore leur ombre
     const pg = projGeom(b);
     buildingGeo(g, b, pg.foot * ppm, pg.ground * ppm, ppm);
   }
@@ -3463,7 +3581,7 @@ function draw3d() {
   gl.uniform1f(m.u.uTexelT, 1 / G.sm2); gl.uniform1f(m.u.uTreeOpa, opa);
   gl.uniform1f(m.u.uShadowK, clamp(1 - S.opacity * 0.9, 0.05, 1));
   gl.uniform1f(m.u.uBright, 1 + S.bright / 100); gl.uniform1f(m.u.uContrast, S.contrast / 100);
-  drawBuf('ground'); drawBuf('nb'); drawBuf('proj');
+  drawBuf('ground'); drawBuf('nb'); if (S.showProj) drawBuf('proj');
   if (S.showTrees) {   // arbres en dernier : feuillage éventuellement transparent
     if (opa < 0.999) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false); }
     drawBuf('veg');
@@ -3701,6 +3819,7 @@ function context3D(p, cx, cy) {
 }
 glcv.addEventListener('wheel', e => {
   e.preventDefault();
+  if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(ev3(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
   const nd = clamp(G.cam.dist * f, 5, 1e6), k = nd / G.cam.dist;
