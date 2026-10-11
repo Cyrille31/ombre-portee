@@ -327,7 +327,7 @@ const parseNum = s => parseFloat(String(s).replace(',', '.').replace(/\s/g, ''))
 const S = {
   orig: null, clean: null, origDataURL: null, fileName: 'plan',
   origRect: null, origStyle: null, blueIdx: null,
-  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, noonClick: 'legal', dialZoom: 1, calStep: 'd1', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'ortho', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
+  dH: 15, solarPresets: false, hHigh: false, dialStep: 1, noonClick: 'legal', dialZoom: 1, calStep: 's05', compStep: 10, crownBase: null, vegVer: 0, editB: false, showAide: true, bright: 0, contrast: 100, treeT: 0, bgMode: 'ortho', showCad: true, view3d: false, defH: 0, lastNbH: 6, hVer: 0,
   scale: null,                       // {p1:{x,y}, p2:{x,y}, meters}
   lat: 43.6047, lon: 1.4442, tzStd: 1, dstAuto: true, utcMode: false, north: 0,
   day: 0, minute: 720, dDay: 0, dMin: 720, dOff: 1,
@@ -1260,7 +1260,7 @@ function numField(id, o) {
 }
 const B = () => S.building;
 numField('iH', { get: () => S.height, set: v => S.height = v, step: 1, fine: 0.1, dec: 1, min: 0, max: 1000 });
-numField('iDialStep', { get: () => S.dialStep, set: v => S.dialStep = v, step: 0.5, fine: 0.25, dec: 2, min: 0.25, max: 12 });
+numField('iDialStep', { get: () => S.dialStep, set: v => S.dialStep = v, step: 0.25, fine: 0.01, dec: 2, min: 0.01, max: 12 });
 numField('iDefH', { get: () => S.defH, set: v => { S.defH = v; S.hVer++; }, step: 0.5, fine: 0.1, dec: 2, min: 0, max: 500 });
 numField('iW', { get: () => B().w / pxPerM(), set: v => B().w = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
 numField('iL', { get: () => B().l / pxPerM(), set: v => B().l = v * pxPerM(), step: 0.5, fine: 0.1, dec: 2, min: 0.2, enabled: B });
@@ -1905,8 +1905,9 @@ function menuTree(t, cx, cy) {
 function menuDial(kind, cx, cy) {
   if (kind === 'sundial') openMenu(cx, cy, 'Cadran solaire', m => {
     m.label('Pas de la molette');
-    m.choices('', [['½ h', 0.5], ['1 h', 1], ['2 h', 2], ['3 h', 3], ['6 h', 6]], () => S.dialStep, v => S.dialStep = v);
-    m.num('Pas', () => S.dialStep, v => S.dialStep = v, { unit: 'h', step: 0.5, fine: 0.25, min: 0.25, max: 12 });
+    m.choices('', [['1 min', 1 / 60], ['5 min', 1 / 12], ['¼ h', 0.25], ['½ h', 0.5], ['1 h', 1], ['3 h', 3]], () => S.dialStep, v => S.dialStep = v);
+    m.num('Pas', () => S.dialStep, v => S.dialStep = v, { unit: 'h', step: 0.25, fine: 0.01, min: 0.01, max: 12 });
+    m.hint('Pas en heures, jusqu\'à 0,01 h (36 s) ; Maj + molette sur la valeur : pas de 0,01.');
     m.label('Un clic sur le cadran met à');
     m.choices('', [['Midi (heure légale)', 'legal'], ['Midi solaire', 'solar']], () => S.noonClick || 'legal', v => S.noonClick = v);
     S._dzInp = m.num('Taille du cadran', () => Math.round((S.dialZoom || 1) * 100), v => { S.dialZoom = clamp(v / 100, 0.5, 20); S.dirty = true; }, { unit: '%', step: 25, fine: 5, min: 50, max: 2000 });
@@ -1914,7 +1915,7 @@ function menuDial(kind, cx, cy) {
     S.dialZoomMenu = true; m.onClose(() => { S.dialZoomMenu = false; S.dialZoom = 1; S.dirty = true; });
   });
   else if (kind === 'calendar') openMenu(cx, cy, 'Calendrier — pas de la molette', m => {
-    m.choices('', CAL_STEPS.map(([t, v]) => [t, v]), () => S.calStep, v => S.calStep = v);
+    m.choices('', CAL_STEPS.map(([t, v]) => [t, v]), () => S.calStep, v => { S.calStep = v; setTimeout(closePop, 0); });   // pas besoin de « OK »
   });
   else openMenu(cx, cy, 'Boussole — pas de la molette', m => {
     m.choices('', [['5°', 5], ['10°', 10], ['15°', 15], ['45°', 45], ['90°', 90]], () => S.compStep, v => S.compStep = v);
@@ -2342,23 +2343,47 @@ function ensureFar() {
     const t0 = performance.now();
     try {
       const cx = st.ax, cy = st.ay, nul = e => { console.warn(e); return null; };
-      status('Relief lointain : téléchargement du relief (100 m sur 50 km, 1 km sur 500 km), de la photo satellite et des villes (IGN)…', true);
-      const bbC = [cx - 250000, cy - 250000, cx + 250000, cy + 250000], bbF = [cx - 25000, cy - 25000, cx + 25000, cy + 25000], TS = Math.min(2048, G.maxTex || 2048);
-      const [C, F, imC, imF, ctC, ctF] = await Promise.all([farGrid(bbC, 500, false), farGrid(bbF, 500, true),
-        fetchImage(wmsUrl(SITE_BG.ortho.base, bbC, TS, TS, 'image/jpeg'), 'Photo satellite').catch(nul), fetchImage(wmsUrl(SITE_BG.ortho.base, bbF, TS, TS, 'image/jpeg'), 'Photo aérienne').catch(nul),
-        fetchCities(bbC, 40000).catch(nul), fetchCities(bbF, 5000).catch(nul)]);
+      status('Relief lointain : téléchargement du relief (100 m sur 50 km, 1 km sur 500 km), des images et des villes (IGN)…', true);
+      // anneau proche (5 km autour du plan) : demi-côté multiple de 500 m, centré sur l'adresse
+      const dS = Math.max(...[[st.x0, st.y1], [st.x0 + st.Lx, st.y1], [st.x0, st.y1 - st.Ly], [st.x0 + st.Lx, st.y1 - st.Ly]].map(([X, Y]) => Math.max(Math.abs(X - cx), Math.abs(Y - cy))));
+      const hN = Math.ceil((dS + 5000) / 500) * 500;
+      const bb = { C: [cx - 250000, cy - 250000, cx + 250000, cy + 250000], F: [cx - 25000, cy - 25000, cx + 25000, cy + 25000], N: [cx - hN, cy - hN, cx + hN, cy + hN] };
+      const [C, F, ctC, ctF] = await Promise.all([farGrid(bb.C, 500, false), farGrid(bb.F, 500, true), fetchCities(bb.C, 40000).catch(nul), fetchCities(bb.F, 5000).catch(nul)]);
       if (!C && !F) throw new Error('relief indisponible');
-      const tex = (im, bb, ct) => { const c = document.createElement('canvas'); c.width = c.height = TS; const x = c.getContext('2d'); x.fillStyle = '#8a9a78'; x.fillRect(0, 0, TS, TS); if (im) x.drawImage(im, 0, 0, TS, TS); if (ct && ct.length) x.drawImage(namesLayer(ct, bb, TS, TS), 0, 0); return c; };
-      S.far = { ax: cx, ay: cy, C, F, texC: tex(imC, bbC, ctC), texF: tex(imF, bbF, ctF), ver: (S.far ? S.far.ver : 0) + 1 };
+      const far = { ax: cx, ay: cy, C, F, hN, bb, cities: { C: ctC, F: ctF, N: ctF }, tex: {}, ver: (S.far ? S.far.ver : 0) + 1 };
+      await farTextures(far, farMode());
+      S.far = far;
       if (S.site && Math.hypot(S.site.ax - cx, S.site.ay - cy) < 2000) S.horizon = computeHorizon();
       G.farKey = null; changed();
       const hm = S.horizon ? Math.max(...S.horizon.h) : 0;
       status('Relief lointain chargé en ' + fmtNum((performance.now() - t0) / 1000, 0) + ' s : ' + (F ? F.src + ' 100 m' : '') + (F && C ? ', ' : '') + (C ? C.src + ' 1 km' : '') + ', corrigé de la rotondité de la Terre' +
-        (ctC ? ', ' + ctC.length + ' villes' : '') + '. Horizon jusqu\'à ' + fmtNum(hm, 1) + '° ; en 3D, le relief s\'étend au-delà du plan (incliner la vue).', true);
+        (ctC ? ', ' + ctC.length + ' villes' : '') + ', image à ' + fmtNum(2 * hN / far.tex[farMode()].sN, 1) + ' m/pixel sur ' + fmtNum(hN / 1000 * 2, 0) + ' km autour du plan. Horizon jusqu\'à ' + fmtNum(hm, 1) + '° ; en 3D, le relief s\'étend au-delà du plan (incliner la vue).', true);
     } catch (e) { console.warn(e); status('Relief lointain indisponible : ' + e.message, true); }
     finally { farJob = null; }
   })();
   return farJob;
+}
+/** Fond du relief lointain : photo (avec les villes) ou plan IGN, comme la case « Photo ». */
+const farMode = () => S.bgMode === 'plan' ? 'plan' : 'ortho';
+/** Images d'un fond pour les trois niveaux ; l'anneau proche en 2 × 2 tuiles (meilleure définition). */
+async function farTextures(far, mode) {
+  if (far.tex[mode]) return far.tex[mode];
+  if (far.loading && far.loading[mode]) return far.loading[mode];
+  far.loading = far.loading || {};
+  return far.loading[mode] = (async () => {
+    const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(4096, G.maxTex || 2048);
+    const get = (bb, w, what) => fetchImage(wmsUrl(layer, bb, w, w, fmt), what).catch(e => { console.warn(e); return null; });
+    const canvasOf = (w, fill) => { const c = document.createElement('canvas'); c.width = c.height = w; const x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, w, w); return c; };
+    const fill = mode === 'plan' ? '#f2efe9' : '#8a9a78', names = (c, k) => { if (mode === 'ortho' && far.cities[k] && far.cities[k].length) c.getContext('2d').drawImage(namesLayer(far.cities[k], far.bb[k], c.width, c.height), 0, 0); return c; };
+    const bN = far.bb.N, nt = TN > TS ? 2 : 1, tw = TN / nt, hw = (bN[2] - bN[0]) / nt;
+    const tiles = []; for (let b = 0; b < nt; b++) for (let a = 0; a < nt; a++) tiles.push([a, b, [bN[0] + a * hw, bN[3] - (b + 1) * hw, bN[0] + (a + 1) * hw, bN[3] - b * hw]]);
+    const [iC, iF, ...iN] = await Promise.all([get(far.bb.C, TS, 'Relief lointain : image'), get(far.bb.F, TS, 'Relief lointain : image'), ...tiles.map(t => get(t[2], tw, 'Relief proche : image'))]);
+    const cC = canvasOf(TS, fill), cF = canvasOf(TS, fill), cN = canvasOf(TN, fill);
+    if (iC) cC.getContext('2d').drawImage(iC, 0, 0, TS, TS); if (iF) cF.getContext('2d').drawImage(iF, 0, 0, TS, TS);
+    tiles.forEach(([a, b], k) => { if (iN[k]) cN.getContext('2d').drawImage(iN[k], a * tw, b * tw, tw, tw); });
+    far.tex[mode] = { C: names(cC, 'C'), F: names(cF, 'F'), N: names(cN, 'N'), sN: TN, id: far.ver + mode };
+    return far.tex[mode];
+  })();
 }
 /** Maillage du relief lointain : carré de demi-côté half centré sur l'adresse, pas step (m). hole : rectangle exclu (aligné sur le pas) ;
  *  inner : rectangle du plan, abaissé de drop sous le terrain précis ; skirt : bord prolongé vers le bas (évite les fentes avec le niveau plus grossier). */
@@ -2387,15 +2412,22 @@ function farMesh(T, o) {
 }
 function buildFar() {
   const F = S.far, st = S.site, on = !!(S.farOn && F && st && Math.hypot(F.ax - st.ax, F.ay - st.ay) < 2000), gl = G.gl;
+  if (on && !F.tex[farMode()]) farTextures(F, farMode()).then(() => { S.dirty = true; });   // autre fond (case « Photo ») : téléchargé à la demande
+  const tx = on ? F.tex[farMode()] || F.tex.ortho || F.tex.plan : null;
   const key = on ? [F.ver, st.x0, st.y1, st.Lx, st.Ly, pxPerM(), S.terrain ? S.terrain.z0 : 0].join('|') : '';
-  if (key === G.farKey) return on; G.farKey = key;
-  if (!on) { setBuf('farC', new Geo()); setBuf('farF', new Geo()); return false; }
-  const ppm = pxPerM(), zref = S.terrain ? S.terrain.z0 : (F.F ? gridZ(F.F, F.F.bb, st.ax, st.ay) : 0) || 0, inner = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1];
-  setBuf('farF', F.F ? farMesh(F.F, { half: 25000, step: 250, inner, drop: 40, skirt: 400, ppm, zref }) : new Geo());
-  setBuf('farC', F.C ? farMesh(F.C, F.F ? { half: 250000, step: 2500, hole: F.F.bb, ppm, zref } : { half: 250000, step: 2500, inner, drop: 400, ppm, zref }) : new Geo());
-  if (G.farTexVer !== F.ver) {
-    G.farTexVer = F.ver;
-    for (const [k, c] of [['farTexC', F.texC], ['farTexF', F.texF]]) {
+  if (key !== G.farKey) {
+    G.farKey = key;
+    if (!on) { for (const k of ['farC', 'farF', 'farN']) setBuf(k, new Geo()); return false; }
+    const ppm = pxPerM(), zref = S.terrain ? S.terrain.z0 : (F.F ? gridZ(F.F, F.F.bb, st.ax, st.ay) : 0) || 0, inner = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1];
+    // trois niveaux emboîtés : anneau proche (maille de 100 m), 50 km (250 m), 500 km (2,5 km)
+    setBuf('farN', F.F ? farMesh(F.F, { half: F.hN, step: 100, inner, drop: 40, skirt: 200, ppm, zref }) : new Geo());
+    setBuf('farF', F.F ? farMesh(F.F, { half: 25000, step: 250, hole: F.bb.N, skirt: 400, ppm, zref }) : new Geo());
+    setBuf('farC', F.C ? farMesh(F.C, F.F ? { half: 250000, step: 2500, hole: F.F.bb, ppm, zref } : { half: 250000, step: 2500, inner, drop: 400, ppm, zref }) : new Geo());
+  }
+  if (!on) return false;
+  if (tx && G.farTexId !== tx.id) {
+    G.farTexId = tx.id;
+    for (const [k, c] of [['farTexC', tx.C], ['farTexF', tx.F], ['farTexN', tx.N]]) {
       G[k] = G[k] || gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G[k]); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c); gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -2403,7 +2435,7 @@ function buildFar() {
       if (G.aniso) gl.texParameterf(gl.TEXTURE_2D, G.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
     }
   }
-  return true;
+  return !!tx;
 }
 /** Lever et coucher du soleil derrière le relief lointain (pas de 2 min), avec cache par jour. */
 let farRS = null;
@@ -2670,7 +2702,7 @@ function dialZoomWheel(e) {   // menu du cadran ouvert : la molette change sa ta
 }
 function dialWheel(dir) {
   stopPlay();
-  const st = Math.max(15, Math.round(S.dialStep * 60)), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);
+  const st = Math.max(0.6, S.dialStep * 60), d0 = S.minute - mod(S.minute, 1440), m = mod(S.minute, 1440);   // pas ≥ 0,01 h
   const k = (m - 720) / st, nk = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
   S.minute = d0 + 720 + nk * st; changed();
 }
@@ -3805,7 +3837,7 @@ function draw3d() {
     for (const X of [ax, bx]) for (const Y of [-6000 * ppm, 5000 * ppm]) for (const Z of [az, bz]) { const q = m4pt(lvF, [X, Y, Z]); a0 = Math.min(a0, q[0]); a1 = Math.max(a1, q[0]); b0 = Math.min(b0, q[1]); b1 = Math.max(b1, q[1]); c0 = Math.min(c0, q[2]); c1 = Math.max(c1, q[2]); }
     LVPF = m4mul(m4ortho(a0, a1, b0, b1, -c1 - 10, -c0 + 10), lvF); fx0 = a0; fx1 = a1;
     gl.bindFramebuffer(gl.FRAMEBUFFER, G.fboF); gl.viewport(0, 0, G.smF, G.smF); gl.clear(gl.DEPTH_BUFFER_BIT);
-    gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVPF); drawBuf('farF'); drawBuf('farC');
+    gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVPF); drawBuf('farN'); drawBuf('farF'); drawBuf('farC');
   }
   // carte d'ombre des arbres
   gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVP);
@@ -3835,8 +3867,8 @@ function draw3d() {
     gl.uniformMatrix4fv(m.u.uLVP, false, LVPF); gl.uniform1f(m.u.uNOff, (fx1 - fx0) / G.smF * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.smF);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
     gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm);
-    for (const [buf, T, tx] of [['farF', F.F, G.farTexF], ['farC', F.C, G.farTexC]]) {
-      if (!T) continue; const bb = T.bb;
+    for (const [buf, T, tx, bb] of [['farN', F.F, G.farTexN, F.bb.N], ['farF', F.F, G.farTexF, F.bb.F], ['farC', F.C, G.farTexC, F.bb.C]]) {
+      if (!T) continue;
       gl.uniform2f(m.u.uPlanOrig, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm); gl.uniform2f(m.u.uPlanSize, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx); drawBuf(buf);
     }
