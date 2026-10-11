@@ -106,13 +106,14 @@ input.big{font-size:18px;font-weight:600;width:90px}
     <div class="row"><input type="text" id="addr" placeholder="Adresse (ex. 1 place du Capitole, Toulouse)" style="width:100%;text-align:left"></div>
     <div class="row">
       <span class="hint">Zone de</span>
-      <select id="siteSize" title="Côté du carré centré sur l'adresse au chargement ; ensuite, agrandir avec les poignées du plan"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option><option value="500000">500 km (relief lointain)</option></select>
+      <select id="siteSize" title="Côté du carré centré sur l'adresse au chargement ; ensuite, agrandir avec les poignées du plan"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
       <span id="siteDims" class="hint" title="Dimensions actuelles du plan (poignées du plan pour les modifier)"></span>
     </div>
     <div class="row">
       <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cPhoto" checked> Photo aérienne</label>
       <label title="Parcelles du cadastre en surimpression"><input type="checkbox" id="cCad" checked> Cadastre</label>
       <label title="Arbres issus du LiDAR HD (modèle de surface − terrain, hors bâtiments)"><input type="checkbox" id="cShowTrees" checked> Arbres</label>
+      <label title="Relief jusqu'à 250 km autour de l'adresse (100 m sur 50 km, 1 km au-delà, rotondité de la Terre) : visible en 3D au-delà du plan ; le soleil se couche derrière les montagnes"><input type="checkbox" id="cFar"> Relief lointain</label>
     </div>
     <div class="row"><button id="btnSite" class="on">Charger le site</button><span id="addrFound" class="hint aide"></span></div>
     <div class="hint aide">Télécharge auprès de l'IGN le fond de plan, les bâtiments avec leur hauteur (BD TOPO) et le relief (LiDAR HD, à défaut RGE ALTI). Nécessite Internet ; le projet enregistré fonctionne ensuite hors ligne.</div>
@@ -677,8 +678,9 @@ function setSiteImage(canvas, site, keep) {
     S.building = { cx: W / 2, cy: H / 2, w: 20 * ppm, l: 12 * ppm, a: 0 };
     S.traj = []; S.dz = 0;
   }
-  S.dirty = true; G.nbKey = ''; G.groundKey = '';
+  S.dirty = true; G.nbKey = ''; G.groundKey = ''; G.farKey = null;
   fitView(); if (S.view3d) fit3d(); changed();
+  if (S.farOn) setTimeout(ensureFar, 0);   // relief lointain de la nouvelle adresse
 }
 
 /* ------------------------------------------------- Lecture de l'échelle (OCR) */
@@ -1506,7 +1508,7 @@ function updateSunInfo() {
     h += `Soleil : hauteur <b>${fmtNum(sun.alt)}°</b>, azimut <b>${fmtNum(sun.az)}°</b> (${card})<br>`;
     h += `Longueur de l'ombre : <b>${L > 9999 ? '> 10 km' : fmtNum(L) + ' m'}</b> (${fmtNum(1 / Math.tan(sun.alt * D2R), 2)} × la hauteur${S.dz ? ' de ' + fmtLen(hE) + ' m' : ''})<br>`;
   } else h += '<b>Soleil sous l\'horizon</b> : pas d\'ombre portée.<br>';
-  { const hz = horizonAt(sun.az); if (hz !== null && sun.alt > 0) h += sun.alt < hz ? (S.site.region ? `<b>Soleil caché par le relief à l'adresse</b> (horizon à ${fmtNum(hz, 1)}°).<br>` : '') : `<span class="hint">Relief lointain : horizon à ${fmtNum(hz, 1)}° dans la direction du soleil.</span><br>`; }
+  { const hz = horizonAt(sun.az); if (hz !== null && sun.alt > 0) h += sun.alt < hz ? '' : `<span class="hint">Relief lointain : horizon à ${fmtNum(hz, 1)}° dans la direction du soleil.</span><br>`; }
   h += ev.rise !== null ? `Lever ${fmtTime(ev.rise)} · midi solaire ${fmtTime(ev.noon)} · coucher ${fmtTime(ev.set ?? 1440)} <span class="hint">(${lbl})</span><br>` : (ev.maxAlt > 0 ? 'Jour polaire.<br>' : 'Nuit polaire.<br>');
   { const fr = farRiseSet(ev); if (fr) h += fr.rise === null ? '<b>Relief lointain : le soleil reste caché toute la journée.</b><br>' : `Derrière le relief lointain : <b>soleil visible de ${fmtTime(fr.rise)} à ${fmtTime(fr.set)}</b><br>`; }
   h += `<span class="hint">Hauteur max. du soleil ce jour : ${fmtNum(ev.maxAlt)}°</span>`;
@@ -1543,7 +1545,7 @@ function projectData() {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, noonClick: S.noonClick, horizon: S.horizon || null, projHiddenByRegion: !!S.projHiddenByRegion, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, noonClick: S.noonClick, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -1563,7 +1565,7 @@ async function loadProject(p) {
     for (const k of ['plan', 'ortho', 'cad', 'names']) if (p.site.layers[k]) { const im = await loadImg(p.site.layers[k]); const cc = document.createElement('canvas'); cc.width = im.width; cc.height = im.height; cc.getContext('2d').drawImage(im, 0, 0); L[k] = cc; }
     if (L.plan || L.ortho || L.cad) S.layers = L;
   }
-  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'showProjShadow', 'nbFac', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase', 'noonClick', 'horizon', 'projHiddenByRegion'])
+  for (const k of ['solarPresets', 'defH', 'building', 'height', 'dz', 'buildings', 'sel', 'scale', 'lat', 'lon', 'tzStd', 'dstAuto', 'utcMode', 'north', 'day', 'minute', 'traj', 'scenario', 'showScenario', 'showCurrent', 'opacity', 'showOrig', 'showDims', 'showNbLbl', 'showTrees', 'showProj', 'showProjShadow', 'nbFac', 'bright', 'contrast', 'treeT', 'bgMode', 'showCad', 'hHigh', 'dialStep', 'calStep', 'compStep', 'crownBase', 'noonClick'])
     if (p[k] !== undefined) S[k] = k === 'buildings' ? p[k].map(normB) : p[k];
   S.dDay = S.day; S.dMin = S.minute; S.dH = S.height; S.dOff = curOff();
   S.pendingHeights = p.nbHeights || null;
@@ -2184,7 +2186,7 @@ function segmentTrees(h, n, ny, T) {
 /** Convergence des méridiens en Lambert-93 : angle du nord géographique par rapport au haut du plan. */
 const l93North = lon => 0.7256077650 * (3 - lon);
 async function loadSite() {
-  const L0 = parseNum($('siteSize').value) || 200, q = $('addr').value.trim(), L = clamp(L0, 30, 1000);
+  const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000);
   if (!q) { $('addr').focus(); return; }
   const btn = $('btnSite'); btn.disabled = true;
   try {
@@ -2193,8 +2195,7 @@ async function loadSite() {
     if (!res.length) throw new Error('adresse introuvable');
     const g = res[0];
     $('addrFound').textContent = 'Adresse trouvée : ' + g.label;
-    if (L0 > 1000) await loadRegion(g, L0);
-    else await loadSiteRect(g, [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2]);
+    await loadSiteRect(g, [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2]);
   } catch (e) {
     console.error(e); status('Chargement du site impossible : ' + e.message, true); alert('Chargement du site impossible.\n' + e.message);
   } finally { btn.disabled = false; }
@@ -2240,7 +2241,6 @@ async function loadSiteRect(g, bb, keepView) {
       }
     }
     const prevSite = S.site, prevPpm = pxPerM();
-    if (S.projHiddenByRegion) { S.showProj = true; S.projHiddenByRegion = false; }
     const dataURL = null;   // l'image est produite à l'enregistrement
     S.site = { label: g.label, Lx: L, Ly: LY, bg, x0: bb[0], y1: bb[3], ax: g.x, ay: g.y, lon: g.lon, lat: g.lat, z0, terrSrc: terr ? terr.src : null };
     S.terrain = terr ? { nx: terr.nx, ny: terr.ny, cell: terr.cell, z: terr.z, z0, src: terr.src } : null;
@@ -2264,10 +2264,11 @@ async function loadSiteRect(g, bb, keepView) {
     const nh = NB.list.filter(c => c.h !== undefined).length;
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
       (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche manquante : ' + lay.errs.join(' ; ') : '') +
-      (horizonAt(0) !== null ? '. Horizon lointain (zone de 500 km) appliqué : le soleil se couche derrière le relief' : '') + '. Placez votre immeuble et ajustez sa taille.', true);
+      '. Placez votre immeuble et ajustez sa taille.', true);
   }
 }
 $('btnSite').onclick = loadSite;
+$('cFar').onchange = e => { S.farOn = e.target.checked; actLog('Relief lointain : ' + S.farOn); if (S.farOn) { if (!S.site) status('Relief lointain : chargez d\'abord un site à partir d\'une adresse.', true); else ensureFar(); } G.farKey = null; changed(); };
 
 /* ------------------------------- Zone de 500 km : relief lointain (rotondité de la Terre) */
 const EARTH_R = 6371000 / (1 - 0.13);   // rayon apparent : réfraction atmosphérique standard (k = 0,13)
@@ -2302,33 +2303,119 @@ function gridZ(T, bb, X, Y) {
   const i = Math.min(T.nx - 2, Math.floor(gx)), j = Math.min(T.ny - 2, Math.floor(gy)), u = gx - i, v = gy - j, z = T.z, n = T.nx;
   return z[j * n + i] * (1 - u) * (1 - v) + z[j * n + i + 1] * u * (1 - v) + z[(j + 1) * n + i] * (1 - u) * v + z[(j + 1) * n + i + 1] * u * v;
 }
-/** Profil d'horizon (hauteur angulaire du relief, tous les ½°) vu depuis l'adresse, à 2 m du sol. */
-function computeHorizon(T, bb, g) {
-  const t = l93North(g.lon) * D2R, N = [Math.sin(t), Math.cos(t)], E = [Math.cos(t), -Math.sin(t)], z0 = gridZ(T, bb, g.x, g.y) + 2, h = [];
-  const dmax = Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) / 2;
+/** Profil d'horizon (hauteur angulaire du relief, tous les ½°) vu de l'adresse, à 2 m du sol : grille fine (100 m) puis grossière (1 km). */
+function computeHorizon() {
+  const F = S.far, st = S.site, t = l93North(st.lon) * D2R, N = [Math.sin(t), Math.cos(t)], E = [Math.cos(t), -Math.sin(t)];
+  const zAt = (X, Y) => { let z = F.F ? gridZ(F.F, F.F.bb, X, Y) : null; if (z === null && F.C) z = gridZ(F.C, F.C.bb, X, Y); return z; };
+  const z0 = (S.terrain ? S.terrain.z0 : zAt(F.ax, F.ay) || 0) + 2, d0 = Math.max(150, Math.hypot(st.Lx, st.Ly) / 2), dmax = F.C ? 250000 : 25000, h = [];
   for (let k = 0; k < 720; k++) {
     const A = k / 2 * D2R, dx = N[0] * Math.cos(A) + E[0] * Math.sin(A), dy = N[1] * Math.cos(A) + E[1] * Math.sin(A); let m = -5;
-    for (let d = 2500; d < dmax; d += Math.max(250, d * 0.004)) { const z = gridZ(T, bb, g.x + dx * d, g.y + dy * d); if (z === null) break; m = Math.max(m, Math.atan2(z - z0, d) / D2R); }
+    for (let d = d0; d < dmax; d += d < 25000 ? Math.max(50, d * 0.004) : Math.max(250, d * 0.004)) { const z = zAt(F.ax + dx * d, F.ay + dy * d); if (z === null) break; m = Math.max(m, Math.atan2(z - z0, d) / D2R); }
     h.push(Math.round(m * 100) / 100);
   }
-  return { x: g.x, y: g.y, label: g.label, h };
+  return { x: F.ax, y: F.ay, h };
 }
-/** Hauteur de l'horizon lointain dans l'azimut az (°), si le site est près du point où il a été calculé. */
+/** Hauteur de l'horizon lointain dans l'azimut az (°), si la case est cochée et le relief chargé pour ce site. */
 function horizonAt(az) {
-  const H = S.horizon, st = S.site; if (!H || !st || Math.hypot(st.ax - H.x, st.ay - H.y) > 15000) return null;
+  const H = S.horizon, st = S.site; if (!S.farOn || !H || !st || Math.hypot(st.ax - H.x, st.ay - H.y) > 2000) return null;
   const f = mod(az, 360) * 2, k = Math.floor(f), u = f - k; return H.h[k % 720] * (1 - u) + H.h[(k + 1) % 720] * u;
+}
+/** Relief d'un carré bb sur n × n mailles : RGE ALTI en France, SRTM ailleurs, pics aberrants retirés, rotondité (centre = adresse). */
+async function farGrid(bb, n, fine) {
+  const nul = e => { console.warn(e); return null; };
+  const [sr, al] = await Promise.all([fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE.SRTM3', bb, n, n, 'Relief SRTM').catch(nul), fetchGrid(fine ? 'ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES' : 'ELEVATION.ELEVATIONGRIDCOVERAGE', bb, n, n, 'Relief RGE ALTI').catch(nul)]);
+  if (!sr && !al) return null;
+  const ok = v => v !== undefined && isFinite(v) && v > -50 && v < 4900, z = new Float32Array(n * n), cell = (bb[2] - bb[0]) / n, cx = (bb[0] + bb[2]) / 2, cy = (bb[1] + bb[3]) / 2;
+  for (let i = 0; i < n * n; i++) z[i] = al && ok(al[i]) ? al[i] : sr && ok(sr[i]) ? sr[i] : 0;
+  const z1 = z.slice(), lim = fine ? 400 : 800;
+  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) { const a = []; for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) if (b || c) a.push(z1[(j + b) * n + i + c]); a.sort((p, q) => p - q); const md = (a[3] + a[4]) / 2; if (Math.abs(z1[j * n + i] - md) > lim) z[j * n + i] = md; }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const X = bb[0] + (i + 0.5) * cell, Y = bb[3] - (j + 0.5) * cell; z[j * n + i] -= ((X - cx) ** 2 + (Y - cy) ** 2) / (2 * EARTH_R); }
+  return { bb, nx: n, ny: n, cell, z, src: (al ? 'RGE ALTI' : '') + (al && sr ? ' + ' : '') + (sr ? 'SRTM' : '') };
+}
+/** Télécharge le relief lointain autour de l'adresse du site (une fois par adresse). */
+let farJob = null;
+function ensureFar() {
+  const st = S.site; if (!S.farOn || !st) return null;
+  if (S.far && Math.hypot(S.far.ax - st.ax, S.far.ay - st.ay) < 2000) { S.horizon = computeHorizon(); G.farKey = null; changed(); return null; }
+  if (farJob) return farJob;
+  farJob = (async () => {
+    const t0 = performance.now();
+    try {
+      const cx = st.ax, cy = st.ay, nul = e => { console.warn(e); return null; };
+      status('Relief lointain : téléchargement du relief (100 m sur 50 km, 1 km sur 500 km), de la photo satellite et des villes (IGN)…', true);
+      const bbC = [cx - 250000, cy - 250000, cx + 250000, cy + 250000], bbF = [cx - 25000, cy - 25000, cx + 25000, cy + 25000], TS = Math.min(2048, G.maxTex || 2048);
+      const [C, F, imC, imF, ctC, ctF] = await Promise.all([farGrid(bbC, 500, false), farGrid(bbF, 500, true),
+        fetchImage(wmsUrl(SITE_BG.ortho.base, bbC, TS, TS, 'image/jpeg'), 'Photo satellite').catch(nul), fetchImage(wmsUrl(SITE_BG.ortho.base, bbF, TS, TS, 'image/jpeg'), 'Photo aérienne').catch(nul),
+        fetchCities(bbC, 40000).catch(nul), fetchCities(bbF, 5000).catch(nul)]);
+      if (!C && !F) throw new Error('relief indisponible');
+      const tex = (im, bb, ct) => { const c = document.createElement('canvas'); c.width = c.height = TS; const x = c.getContext('2d'); x.fillStyle = '#8a9a78'; x.fillRect(0, 0, TS, TS); if (im) x.drawImage(im, 0, 0, TS, TS); if (ct && ct.length) x.drawImage(namesLayer(ct, bb, TS, TS), 0, 0); return c; };
+      S.far = { ax: cx, ay: cy, C, F, texC: tex(imC, bbC, ctC), texF: tex(imF, bbF, ctF), ver: (S.far ? S.far.ver : 0) + 1 };
+      if (S.site && Math.hypot(S.site.ax - cx, S.site.ay - cy) < 2000) S.horizon = computeHorizon();
+      G.farKey = null; changed();
+      const hm = S.horizon ? Math.max(...S.horizon.h) : 0;
+      status('Relief lointain chargé en ' + fmtNum((performance.now() - t0) / 1000, 0) + ' s : ' + (F ? F.src + ' 100 m' : '') + (F && C ? ', ' : '') + (C ? C.src + ' 1 km' : '') + ', corrigé de la rotondité de la Terre' +
+        (ctC ? ', ' + ctC.length + ' villes' : '') + '. Horizon jusqu\'à ' + fmtNum(hm, 1) + '° ; en 3D, le relief s\'étend au-delà du plan (incliner la vue).', true);
+    } catch (e) { console.warn(e); status('Relief lointain indisponible : ' + e.message, true); }
+    finally { farJob = null; }
+  })();
+  return farJob;
+}
+/** Maillage du relief lointain : carré de demi-côté half centré sur l'adresse, pas step (m). hole : rectangle exclu (aligné sur le pas) ;
+ *  inner : rectangle du plan, abaissé de drop sous le terrain précis ; skirt : bord prolongé vers le bas (évite les fentes avec le niveau plus grossier). */
+function farMesh(T, o) {
+  const st = S.site, F = S.far, ppm = o.ppm, n = Math.round(2 * o.half / o.step), g = new Geo(), P = [], IN = [], C = [0, 0, 0, 0];
+  const zAt = (X, Y) => { const gx = clamp((X - T.bb[0]) / T.cell - 0.5, 0, T.nx - 1), gy = clamp((T.bb[3] - Y) / T.cell - 0.5, 0, T.ny - 1), i = Math.min(T.nx - 2, Math.floor(gx)), j = Math.min(T.ny - 2, Math.floor(gy)), u = gx - i, v = gy - j, z = T.z, w = T.nx;
+    return z[j * w + i] * (1 - u) * (1 - v) + z[j * w + i + 1] * u * (1 - v) + z[(j + 1) * w + i] * (1 - u) * v + z[(j + 1) * w + i + 1] * u * v; };
+  for (let b = 0; b <= n; b++) for (let a = 0; a <= n; a++) {
+    const X = F.ax - o.half + a * o.step, Y = F.ay + o.half - b * o.step, r = o.inner, ins = !!r && X > r[0] && X < r[2] && Y > r[1] && Y < r[3];
+    IN.push(ins); P.push([(X - st.x0) * ppm, (zAt(X, Y) - o.zref - (ins ? o.drop : 0)) * ppm, (st.y1 - Y) * ppm]);
+  }
+  const at = (a, b) => P[clamp(b, 0, n) * (n + 1) + clamp(a, 0, n)], d = 2 * o.step * ppm;
+  const nor = (a, b) => v3.norm([-(at(a + 1, b)[1] - at(a - 1, b)[1]) / d, 1, -(at(a, b + 1)[1] - at(a, b - 1)[1]) / d]);
+  for (let b = 0; b < n; b++) for (let a = 0; a < n; a++) {
+    const k = b * (n + 1) + a; if (IN[k] && IN[k + 1] && IN[k + n + 1] && IN[k + n + 2]) continue;   // sous le plan précis
+    if (o.hole) { const X = F.ax - o.half + (a + 0.5) * o.step, Y = F.ay + o.half - (b + 0.5) * o.step, h = o.hole; if (X > h[0] && X < h[2] && Y > h[1] && Y < h[3]) continue; }   // niveau plus fin
+    for (const [i, j] of [[a, b], [a + 1, b], [a + 1, b + 1], [a, b], [a + 1, b + 1], [a, b + 1]]) g.v(at(i, j), nor(i, j), C, 0);
+  }
+  if (o.skirt) {   // jupe : bord prolongé de skirt (m) vers le bas
+    const down = q => [q[0], q[1] - o.skirt * ppm, q[2]], edge = [];
+    for (let a = 0; a < n; a++) edge.push([[a, 0], [a + 1, 0]], [[a + 1, n], [a, n]]);
+    for (let b = 0; b < n; b++) edge.push([[n, b], [n, b + 1]], [[0, b + 1], [0, b]]);
+    for (const [[a1, b1], [a2, b2]] of edge) { const p = at(a1, b1), q = at(a2, b2), nn = nor(a1, b1); for (const v of [p, q, down(q), p, down(q), down(p)]) g.v(v, nn, C, 0); }
+  }
+  return g;
+}
+function buildFar() {
+  const F = S.far, st = S.site, on = !!(S.farOn && F && st && Math.hypot(F.ax - st.ax, F.ay - st.ay) < 2000), gl = G.gl;
+  const key = on ? [F.ver, st.x0, st.y1, st.Lx, st.Ly, pxPerM(), S.terrain ? S.terrain.z0 : 0].join('|') : '';
+  if (key === G.farKey) return on; G.farKey = key;
+  if (!on) { setBuf('farC', new Geo()); setBuf('farF', new Geo()); return false; }
+  const ppm = pxPerM(), zref = S.terrain ? S.terrain.z0 : (F.F ? gridZ(F.F, F.F.bb, st.ax, st.ay) : 0) || 0, inner = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1];
+  setBuf('farF', F.F ? farMesh(F.F, { half: 25000, step: 250, inner, drop: 40, skirt: 400, ppm, zref }) : new Geo());
+  setBuf('farC', F.C ? farMesh(F.C, F.F ? { half: 250000, step: 2500, hole: F.F.bb, ppm, zref } : { half: 250000, step: 2500, inner, drop: 400, ppm, zref }) : new Geo());
+  if (G.farTexVer !== F.ver) {
+    G.farTexVer = F.ver;
+    for (const [k, c] of [['farTexC', F.texC], ['farTexF', F.texF]]) {
+      G[k] = G[k] || gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G[k]); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c); gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (G.aniso) gl.texParameterf(gl.TEXTURE_2D, G.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    }
+  }
+  return true;
 }
 /** Lever et coucher du soleil derrière le relief lointain (pas de 2 min), avec cache par jour. */
 let farRS = null;
 function farRiseSet(ev) {
   if (horizonAt(0) === null || ev.rise === null) return null;
-  const key = [S.day, S.utcMode, S.horizon.x, S.horizon.y, S.site.ax].join('|'); if (farRS && farRS.key === key) return farRS.v;
+  const key = [S.day, S.utcMode, S.horizon.x, S.horizon.y, S.horizon.h[0], S.site.ax].join('|'); if (farRS && farRS.key === key) return farRS.v;
   let rise = null, set = null; const off = d => offsetFor(S.day, d, S.utcMode);
   for (let m = Math.floor(ev.rise); m <= Math.ceil(ev.set ?? 1440); m += 2) { const sn = sunFor(S.day, m, off(m)); if (sn.alt > 0 && sn.alt >= horizonAt(sn.az)) { if (rise === null) rise = m; set = m; } }
   farRS = { key, v: { rise, set } }; return farRS.v;
 }
-/** Soleil caché par le relief lointain (sites de quelques centaines de mètres ; la zone de 500 km calcule ses ombres elle-même). */
-function farHidden(sun) { if (!sun || sun.alt <= 0 || (S.site && S.site.region)) return false; const h = horizonAt(sun.az); return h !== null && sun.alt < h; }
+/** Soleil caché par le relief lointain : tout le site est à l'ombre. */
+function farHidden(sun) { if (!sun || sun.alt <= 0) return false; const h = horizonAt(sun.az); return h !== null && sun.alt < h; }
 /** Déplace les immeubles projetés d'un site à l'autre (même position géographique, sinon regroupés au centre). */
 function carryBuildings(oldB, oldSite, oldPpm, bb, ppm, W, Hh) {
   if (!oldB.length) return;
@@ -2342,38 +2429,6 @@ function carryBuildings(oldB, oldSite, oldPpm, bb, ppm, W, Hh) {
     nb = nb.map(b => ({ ...b, cx: b.cx - mx + W / 2, cy: b.cy - my + Hh / 2 }));
   }
   const sel = S.sel; S.buildings = nb.map(normB); S.sel = clamp(sel, 0, nb.length - 1); S.dH = S.height;
-}
-/** Zone de L m de côté (500 km) : relief grossier (1 km), photo satellite, villes ; pas de bâtiments. */
-async function loadRegion(g, L) {
-  actLog('Chargement de la zone ' + L / 1000 + ' km : ' + g.label);
-  const n = 500, cell = L / n, bb = [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2], pw = 2000, ppm = pw / L;
-  status('Téléchargement du relief (SRTM et RGE ALTI), de la photo satellite et des villes (IGN) sur ' + L / 1000 + ' km…', true);
-  const nul = e => { console.warn(e); return null; };
-  const [srtm, alti, lay, cities] = await Promise.all([fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE.SRTM3', bb, n, n, 'Relief SRTM').catch(nul), fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE', bb, n, n, 'Relief RGE ALTI').catch(nul),
-    fetchLayers(bb, pw, pw, true), fetchCities(bb, L > 300000 ? 40000 : 15000).catch(nul)]);
-  if (!srtm && !alti) throw new Error('relief indisponible');
-  // relief : RGE ALTI en France, SRTM ailleurs ; mer et lacunes à 0 ; pics aberrants retirés
-  const ok = v => v !== undefined && isFinite(v) && v > -50 && v < 4900, z = new Float32Array(n * n);
-  for (let i = 0; i < n * n; i++) z[i] = alti && ok(alti[i]) ? alti[i] : srtm && ok(srtm[i]) ? srtm[i] : 0;
-  const z1 = z.slice();
-  for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) { const a = []; for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) if (b || c) a.push(z1[(j + b) * n + i + c]); a.sort((p, q) => p - q); const md = (a[3] + a[4]) / 2; if (Math.abs(z1[j * n + i] - md) > 800) z[j * n + i] = md; }
-  // rotondité de la Terre : le relief s'abaisse de d² / 2R avec la distance d à l'adresse
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const X = bb[0] + (i + 0.5) * cell, Y = bb[3] - (j + 0.5) * cell; z[j * n + i] -= ((X - g.x) ** 2 + (Y - g.y) ** 2) / (2 * EARTH_R); }
-  const T = { nx: n, ny: n, cell, z }, z0 = gridZ(T, bb, g.x, g.y) || 0, src = (alti ? 'RGE ALTI' : '') + (alti && srtm ? ' + ' : '') + (srtm ? 'SRTM' : '') + ' (' + fmtNum(cell / 1000, 1) + ' km)';
-  if (cities && cities.length) lay.L.names = namesLayer(cities, bb, pw, pw);
-  const oldB = S.buildings.map(b => ({ ...b })), oldSite = S.site, oldPpm = pxPerM();
-  S.site = { label: g.label, Lx: L, Ly: L, bg: S.bgMode, x0: bb[0], y1: bb[3], ax: g.x, ay: g.y, lon: g.lon, lat: g.lat, z0, terrSrc: src, region: true };
-  S.terrain = { nx: n, ny: n, cell, z, z0, src };
-  S.lat = Math.round(g.lat * 1e4) / 1e4; S.lon = Math.round(g.lon * 1e4) / 1e4; S.tzStd = 1; S.dstAuto = true; S.north = Math.round(l93North(g.lon) * 100) / 100;
-  S.layers = lay.L; S.veg = null; G.vegKey = '';
-  S.horizon = computeHorizon(T, bb, g);
-  setImage(composeLayers(lay.L), null, (g.label.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 50) || 'zone') + '_500km', false, { blds: [], L });
-  carryBuildings(oldB, oldSite, oldPpm, bb, ppm, pw, pw);
-  if (S.showProj) { S.showProj = false; S.projHiddenByRegion = true; }   // immeubles invisibles à cette échelle
-  if (enter3D()) { G.cam.pitch = 55 * D2R; G.cam.yaw = 0; fit3d(); changed(); }
-  const hm = Math.max(...S.horizon.h);
-  status('Zone de ' + L / 1000 + ' km : relief ' + src + ' corrigé de la rotondité de la Terre, ' + (cities ? cities.length + ' ville(s)' : 'villes indisponibles') + (lay.errs.length ? ' — Couche manquante : ' + lay.errs.join(' ; ') : '') +
-    '. Horizon vu de l\'adresse : jusqu\'à ' + fmtNum(hm, 1) + '° ; il sera appliqué au site de quelques centaines de mètres chargé ensuite à cette adresse.', true);
 }
 const canvasURL = (c, jpg) => { const k = jpg ? '_uj' : '_up'; if (c[k] && c._uw === c.width) return c[k]; c._uw = c.width; return c[k] = c.toDataURL(jpg ? 'image/jpeg' : 'image/png', 0.88); };
 $('addr').addEventListener('keydown', e => { if (e.key === 'Enter') loadSite(); e.stopPropagation(); });
@@ -2395,7 +2450,7 @@ function siteForSave() {
 }
 function siteFromSave(st) {
   const L = st.Lx || st.L, Ly = st.Ly || st.L;
-  S.site = { label: st.label, Lx: L, Ly, bg: st.bg, x0: st.x0, y1: st.y1, ax: st.ax, ay: st.ay, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc, region: !!st.region };
+  S.site = { label: st.label, Lx: L, Ly, bg: st.bg, x0: st.x0, y1: st.y1, ax: st.ax, ay: st.ay, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc };
   S.terrain = st.terrain ? { nx: st.terrain.nx || st.terrain.n, ny: st.terrain.ny || st.terrain.n, cell: st.terrain.cell, z0: st.terrain.z0, src: st.terrain.src, z: b64ToF32(st.terrain.z) } : null;
   S.veg = st.veg ? { nx: st.veg.nx || st.veg.n, ny: st.veg.ny || st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, hedgeArea: st.veg.hedgeArea || 0, trees: st.veg.trees || [], h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
   const roofIn = R => { if (!R) return undefined; const s = atob(R.v), v = new Float32Array(s.length); for (let i = 0; i < s.length; i++) v[i] = s.charCodeAt(i) / 255; return { ...R, v }; };
@@ -3293,7 +3348,7 @@ function roofUp() {
 
 /* ------------------------------------- Agrandir le site (poignées du plan) et règle */
 function siteHandleList() {
-  if (!S.site || S.site.region || !S.clean || S.mode !== 'select') return [];
+  if (!S.site || !S.clean || S.mode !== 'select') return [];
   const W = S.clean.width, H = S.clean.height, out = [];
   for (const hx of [-1, 0, 1]) for (const hy of [-1, 0, 1]) { if (!hx && !hy) continue; out.push({ hx, hy, x: (hx + 1) / 2 * W, y: (hy + 1) / 2 * H }); }
   return out;
@@ -3400,6 +3455,7 @@ precision highp float; precision highp sampler2DShadow;
 uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
 uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
 uniform float uBright; uniform float uContrast; uniform float uTreeOpa; uniform float uShadowK; uniform float uRelief;
+uniform vec2 uPlanOrig; uniform float uFar; uniform vec3 uEye; uniform float uFog;
 in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL; in vec2 vUV; in float vFac;
 out vec4 oCol;
 // façades dessinées à l'échelle (m) : 1 = logements, 2 = bureaux, 3 = hangar
@@ -3450,7 +3506,7 @@ void main() {
   float nd = dot(n, uSun), l = nd > 0.0 ? lit() : 0.0, k;
   // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
   bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
-  vec3 base = tex ? texture(uPlan, vPos.xz / uPlanSize).rgb : vCol.rgb;
+  vec3 base = tex ? texture(uPlan, (vPos.xz - uPlanOrig) / uPlanSize).rgb : vCol.rgb;
   if (vFac > 0.5 && abs(n.y) < 0.3) base = facade(base, vFac, vUV);
   // uShadowK : clarté à l'ombre, réglée par « Opacité de l'ombre »
   // sol et toits : un pan incliné s'éclaire selon l'angle du soleil (dégradé), relativement à un toit plat
@@ -3458,6 +3514,7 @@ void main() {
   else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
   vec3 col = base * k;
   if (tex || tree) col = clamp((col * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste, après l'éclairage (comme en 2D)
+  if (uFar > 0.5) col = mix(col, vec3(0.80, 0.84, 0.89), clamp(length(vPos - uEye) / uFog, 0.0, 0.65));   // brume du relief lointain
   oCol = vec4(col, crown ? uTreeOpa : 1.0);
 }`;
 const VS_DEPTH = `#version 300 es
@@ -3501,6 +3558,14 @@ function initGL() {
       [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE], [gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     G.fbo2 = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo2);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shadowTex2, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    G.smF = Math.min(2048, G.sm);
+    G.shadowTexF = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, G.smF, G.smF);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
+      [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE], [gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    G.fboF = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, G.fboF);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, G.shadowTexF, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     G.planTex = gl.createTexture(); G.idsTex = gl.createTexture();
     G.aniso = gl.getExtension('EXT_texture_filter_anisotropic');
@@ -3671,7 +3736,7 @@ function buildProject() {
   if (!S.terrain) gg.quad([0, 0, 0], [W, 0, 0], [W, 0, H], [0, 0, H], [0, 1, 0], [0, 0, 0, 0]);
   else {
     // maillage du relief (≤ 200 × 200 mailles), normales par différences centrées
-    const mm = S.site && S.site.region ? 250 : 200, nx = Math.min(mm, S.terrain.nx), ny = Math.min(mm, S.terrain.ny), dxp = W / nx, dyp = H / ny;
+    const nx = Math.min(200, S.terrain.nx), ny = Math.min(200, S.terrain.ny), dxp = W / nx, dyp = H / ny;
     const P = [];
     for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) P.push(terrainAt(i * dxp, j * dyp) * ppm);
     const at = (i, j) => P[clamp(j, 0, ny) * (nx + 1) + clamp(i, 0, nx)];
@@ -3690,7 +3755,8 @@ function camInfo(cw = CW, ch = CH) {
   const ty = S.terrain ? terrainAt(c.tx, c.tz) * pxPerM() : 0;
   const target = [c.tx, ty, c.tz], eye = [c.tx - c.dist * sp * g[0], ty + c.dist * cp, c.tz - c.dist * sp * g[2]], up = [cp * g[0], sp, cp * g[2]];
   const ext = Math.max(S.clean ? Math.max(S.clean.width, S.clean.height) : 1000, 1);
-  const VP = m4mul(m4persp(G.fov, cw / ch, Math.max(0.5, c.dist * 0.01), c.dist * 8 + ext * 4), m4look(eye, target, up));
+  const farE = S.farOn && S.far ? 300000 * pxPerM() : 0;   // relief lointain : jusqu'à l'horizon
+  const VP = m4mul(m4persp(G.fov, cw / ch, Math.max(0.5, c.dist * 0.01), Math.max(c.dist * 8 + ext * 4, farE)), m4look(eye, target, up));
   return { eye, target, up, VP };
 }
 function sunVec(sun) {
@@ -3708,8 +3774,9 @@ const minSceneH = () => (terrainRange()[0] - 1) * pxPerM();
 function draw3d() {
   if (!G.gl || !S.clean) return;
   const gl = G.gl, W = S.clean.width, H = S.clean.height;
-  uploadTextures(); buildNeighbors(); buildProject(); buildVeg();
+  uploadTextures(); buildNeighbors(); buildProject(); buildVeg(); const farOn = buildFar();
   const sun = curSun(), up = sun.alt > 0.05 && !farHidden(sun), L = up ? sunVec(sun) : [0, 1, 0];   // derrière le relief lointain : tout à l'ombre
+  const upR = sun.alt > 0.05, LR = upR ? sunVec(sun) : [0, 1, 0];   // vrai soleil, pour le relief lointain
   // matrice de la lumière (projection orthogonale englobant la scène)
   const ctr = [W / 2, 0, H / 2], R = Math.hypot(W, H), mh = maxSceneH() + 1;
   const lv = m4look(v3.add(ctr, v3.mul(L, R)), ctr, Math.abs(L[1]) > 0.99 ? [0, 0, -1] : [0, 1, 0]);
@@ -3729,7 +3796,19 @@ function draw3d() {
   gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3);
   if (S.terrain) drawBuf('ground');   // le relief porte aussi des ombres
   drawBuf('nb'); if (S.showProjShadow) drawBuf('proj');   // sans ombre : l'immeuble reste visible mais ne porte pas d'ombre
+  // carte d'ombre du relief lointain (500 km)
+  let LVPF = null, fx0 = 0, fx1 = 1;
+  if (farOn) {
+    const ppm = pxPerM(), st = S.site, F = S.far, bb = F.C ? F.C.bb : F.F.bb, ax = (bb[0] - st.x0) * ppm, bx = (bb[2] - st.x0) * ppm, az = (st.y1 - bb[3]) * ppm, bz = (st.y1 - bb[1]) * ppm;
+    const cF = [(ax + bx) / 2, 0, (az + bz) / 2], RF = Math.hypot(bx - ax, bz - az), lvF = m4look(v3.add(cF, v3.mul(LR, RF)), cF, Math.abs(LR[1]) > 0.99 ? [0, 0, -1] : [0, 1, 0]);
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity, c0 = Infinity, c1 = -Infinity;
+    for (const X of [ax, bx]) for (const Y of [-6000 * ppm, 5000 * ppm]) for (const Z of [az, bz]) { const q = m4pt(lvF, [X, Y, Z]); a0 = Math.min(a0, q[0]); a1 = Math.max(a1, q[0]); b0 = Math.min(b0, q[1]); b1 = Math.max(b1, q[1]); c0 = Math.min(c0, q[2]); c1 = Math.max(c1, q[2]); }
+    LVPF = m4mul(m4ortho(a0, a1, b0, b1, -c1 - 10, -c0 + 10), lvF); fx0 = a0; fx1 = a1;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, G.fboF); gl.viewport(0, 0, G.smF, G.smF); gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVPF); drawBuf('farF'); drawBuf('farC');
+  }
   // carte d'ombre des arbres
+  gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVP);
   gl.bindFramebuffer(gl.FRAMEBUFFER, G.fbo2); gl.viewport(0, 0, G.sm2, G.sm2); gl.clear(gl.DEPTH_BUFFER_BIT);
   if (S.showTrees) drawBuf('veg');
   gl.disable(gl.POLYGON_OFFSET_FILL);
@@ -3748,9 +3827,23 @@ function draw3d() {
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex2); gl.uniform1i(m.u.uShadowT, 3);
   const opa = 1 - S.treeT / 100;
   gl.uniform1f(m.u.uTexelT, 1 / G.sm2); gl.uniform1f(m.u.uTreeOpa, opa);
-  gl.uniform1f(m.u.uShadowK, clamp(1 - S.opacity * 0.9, 0.05, 1)); gl.uniform1f(m.u.uRelief, S.site && S.site.region ? 1 : 0);
+  gl.uniform1f(m.u.uShadowK, clamp(1 - S.opacity * 0.9, 0.05, 1)); gl.uniform1f(m.u.uRelief, 0); gl.uniform2f(m.u.uPlanOrig, 0, 0); gl.uniform1f(m.u.uFar, 0);
   gl.uniform1f(m.u.uBright, 1 + S.bright / 100); gl.uniform1f(m.u.uContrast, S.contrast / 100);
   drawBuf('ground'); drawBuf('nb'); if (S.showProj) drawBuf('proj');
+  if (farOn) {   // relief lointain : sa photo, sa carte d'ombre, ombrage du relief et brume ; puis retour aux réglages du plan
+    const ppm = pxPerM(), st = S.site, F = S.far;
+    gl.uniformMatrix4fv(m.u.uLVP, false, LVPF); gl.uniform1f(m.u.uNOff, (fx1 - fx0) / G.smF * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.smF);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
+    gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm);
+    for (const [buf, T, tx] of [['farF', F.F, G.farTexF], ['farC', F.C, G.farTexC]]) {
+      if (!T) continue; const bb = T.bb;
+      gl.uniform2f(m.u.uPlanOrig, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm); gl.uniform2f(m.u.uPlanSize, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx); drawBuf(buf);
+    }
+    gl.uniformMatrix4fv(m.u.uLVP, false, LVP); gl.uniform1f(m.u.uNOff, (x1 - x0) / G.sm * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.sm);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.planTex);
+    gl.uniform1f(m.u.uTreeOpa, opa); gl.uniform1f(m.u.uRelief, 0); gl.uniform1f(m.u.uFar, 0); gl.uniform3fv(m.u.uSun, L); gl.uniform1f(m.u.uSunUp, up ? 1 : 0); gl.uniform2f(m.u.uPlanOrig, 0, 0); gl.uniform2f(m.u.uPlanSize, W, H);
+  }
   if (S.showTrees) {   // arbres en dernier : feuillage éventuellement transparent
     if (opa < 0.999) { gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE); gl.depthMask(false); }
     drawBuf('veg');
@@ -3991,7 +4084,7 @@ glcv.addEventListener('wheel', e => {
   if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(ev3(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
-  const nd = clamp(G.cam.dist * f, 5, 1e6), k = nd / G.cam.dist;
+  const nd = clamp(G.cam.dist * f, 5, S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6), k = nd / G.cam.dist;
   if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
   G.cam.dist = nd; S.dirty = true;
 }, { passive: false });

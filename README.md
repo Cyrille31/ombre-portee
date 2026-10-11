@@ -22,11 +22,14 @@ Il faut une connexion Internet au moment du chargement. Une fois enregistré, le
 
 **Agrandir la zone** : des poignées bleues sont placées aux coins et au milieu des bords du plan (en 2D et en 3D). Glissez-en une : le nouveau rectangle s'affiche avec ses dimensions, puis il est rechargé (jusqu'à 1 000 m de côté). Les immeubles ajoutés, la vue et les réglages sont conservés. Les bâtiments sont découpés au bord du plan : seules les parties sur le plan sont gardées.
 
-### Relief lointain : zone de 500 km
+### Relief lointain
 
-Dans « Zone de », le choix **500 km (relief lointain)** charge un carré de 500 km de côté centré sur l'adresse, en faible définition (relief à 1 km : RGE ALTI en France, SRTM au-delà, Pyrénées espagnoles et Alpes comprises), avec une photo satellite grossière, le plan IGN et les noms des principales villes (plus de 40 000 habitants), mais sans bâtiments. Le relief est abaissé de d²/2R avec la distance d à l'adresse pour tenir compte de la **rotondité de la Terre** (R = rayon terrestre corrigé de la réfraction atmosphérique standard, k = 0,13). En 3D, les montagnes portent leurs ombres et sont ombrées selon le soleil ; les hauteurs sont à l'échelle réelle (relief peu marqué vu de loin : zoomer). Les ombres sont exactes vues de l'adresse ; loin d'elle, la direction du soleil varie légèrement.
+La case **Relief lointain** (décochée au lancement) télécharge, autour de l'adresse du site, le relief à 100 m sur 50 km et à 1 km jusqu'à 250 km (RGE ALTI en France, SRTM au-delà : Pyrénées espagnoles et Alpes comprises), avec la photo satellite et les noms des villes (plus de 5 000 habitants à moins de 25 km, plus de 40 000 au-delà). Comptez quelques secondes. « Zone de » ne règle que la carte de travail, qui reste précise (bâtiments, LiDAR).
 
-Le logiciel calcule aussi le **profil d'horizon** vu de l'adresse (tous les ½°, à 2 m du sol). Chargez ensuite un site de 100 à 800 m à la même adresse (à moins de 15 km) : quand le soleil passe derrière le relief, tout le site est à l'ombre (en 2D comme en 3D), l'information sur le soleil l'indique avec les heures où il est réellement visible, et la boussole grise la partie du ciel masquée par les montagnes. L'horizon est enregistré avec le projet.
+- Le relief est abaissé de d²/2R avec la distance d à l'adresse pour tenir compte de la **rotondité de la Terre** (R = rayon terrestre corrigé de la réfraction atmosphérique standard, k = 0,13).
+- En 3D, il s'étend au-delà du plan jusqu'à l'horizon (inclinez la vue), ombré selon le soleil, avec ses propres ombres et une légère brume au loin ; les hauteurs sont à l'échelle réelle.
+- Le **profil d'horizon** vu de l'adresse (tous les ½°, à 2 m du sol, depuis le bord du plan) est calculé sur la grille fine puis la grille grossière : quand le soleil passe derrière le relief, tout le plan est à l'ombre (en 2D comme en 3D), l'information sur le soleil donne les heures où il est réellement visible et la boussole grise la partie du ciel masquée par les montagnes.
+- Le relief est échantillonné (une altitude par maille) : un sommet très pointu entre deux points peut être un peu abaissé (quelques dizaines de mètres avec la maille de 100 m), ce qui reste négligeable pour l'horizon.
 
 ## Préparer un plan (image ou PDF)
 
