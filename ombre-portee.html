@@ -1889,8 +1889,9 @@ function menuProj(b, part, cx, cy) {
     m.button('Supprimer', () => { closePop(); $('btnDelB').onclick(); });
   });
 }
-function menuBg(cx, cy, P) {
+function menuBg(cx, cy, P, FP) {
   openMenu(cx, cy, 'Fond', m => {
+    if (FP) { m.button('📍 Nouvelle zone de travail ici (' + $('siteSize').value + ' m)', () => { closePop(); newZoneAt(FP.X, FP.Y); }); m.hint('Remplace la zone de travail actuelle (même taille que « Zone de »), centrée sur ce point du relief lointain.'); m.sep(); }
     m.button('🏢 Dessiner un nouvel immeuble', () => { closePop(); if (S.view3d) exit3D(); setMode('draw'); status('Nouvel immeuble : glisser sur le plan pour tracer son rectangle.', true); });
     if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
     m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
@@ -2452,6 +2453,47 @@ function buildFar() {
   }
   return !!tx;
 }
+/** Hauteur (px) du relief lointain au point (x, z) de la vue 3D ; sur le plan, terrain précis. */
+function farH(x, z) {
+  const F = S.far, st = S.site, ppm = pxPerM(), W = S.clean.width, H = S.clean.height;
+  if (x >= 0 && z >= 0 && x <= W && z <= H) return terrainAt(x, z) * ppm;
+  const X = st.x0 + x / ppm, Y = st.y1 - z / ppm, zref = S.terrain ? S.terrain.z0 : (F.F ? gridZ(F.F, F.F.bb, st.ax, st.ay) : 0) || 0;
+  let zz = F.F ? gridZ(F.F, F.F.bb, X, Y) : null; if (zz === null && F.C) zz = gridZ(F.C, F.C.bb, X, Y);
+  return zz === null ? null : (zz - zref) * ppm;
+}
+/** Point du relief lointain sous le pointeur (marche le long du rayon) : { X, Y } en Lambert-93, out = hors du plan. */
+function farPick(sx, sy) {
+  const { o, d } = ray3(sx, sy), ppm = pxPerM(), tmax = 600000 * ppm; let t0 = 0, t = 0;
+  while (t < tmax) {
+    t = t0 + Math.max(3 * ppm, t0 * 0.003);
+    const x = o[0] + d[0] * t, z = o[2] + d[2] * t, h = farH(x, z); if (h === null) return null;
+    if (o[1] + d[1] * t <= h) {   // traversée : affinage par dichotomie
+      let a = t0, b = t; for (let k = 0; k < 30; k++) { const m = (a + b) / 2, hm = farH(o[0] + d[0] * m, o[2] + d[2] * m); if (hm !== null && o[1] + d[1] * m <= hm) b = m; else a = m; }
+      const xx = o[0] + d[0] * b, zz = o[2] + d[2] * b, st = S.site;
+      return { X: st.x0 + xx / ppm, Y: st.y1 - zz / ppm, out: xx < 0 || zz < 0 || xx > S.clean.width || zz > S.clean.height };
+    }
+    t0 = t;
+  }
+  return null;
+}
+/** Lambert-93 → longitude, latitude (°), ellipsoïde GRS 80. */
+function l93ToWgs(X, Y) {
+  const n = 0.7256077650, c = 11754255.426, xs = 700000, ys = 12655612.050, e = 0.0818191910428158;
+  const dx = X - xs, dy = ys - Y, Rr = Math.hypot(dx, dy), g = Math.atan(dx / dy), lon = 3 + g / n / D2R, li = -Math.log(Rr / c) / n;
+  let lat = 2 * Math.atan(Math.exp(li)) - Math.PI / 2;
+  for (let k = 0; k < 8; k++) { const es = e * Math.sin(lat); lat = 2 * Math.atan(Math.pow((1 + es) / (1 - es), e / 2) * Math.exp(li)) - Math.PI / 2; }
+  return { lon, lat: lat / D2R };
+}
+/** Nouvelle zone de travail centrée sur un point Lambert-93 (adresse la plus proche pour le nom). */
+async function newZoneAt(X, Y) {
+  const L = clamp(parseNum($('siteSize').value) || 200, 30, 1000), { lon, lat } = l93ToWgs(X, Y);
+  let label = 'Point ' + fmtNum(lat, 4) + ' N, ' + fmtNum(lon, 4) + ' E';
+  try { const r = await fetchRetry(GEOPF + '/geocodage/reverse?limit=1&lon=' + lon.toFixed(6) + '&lat=' + lat.toFixed(6), null, 'Adresse du point', 2); const j = await r.json(); if (j.features && j.features[0]) label = j.features[0].properties.label; } catch (e) { console.warn(e); }
+  $('addr').value = label; $('addrFound').textContent = 'Nouvelle zone : ' + label;
+  status('Chargement de la nouvelle zone de travail : ' + label + '…', true);
+  try { await loadSiteRect({ label, lon, lat, x: X, y: Y }, [X - L / 2, Y - L / 2, X + L / 2, Y + L / 2]); }
+  catch (e) { console.error(e); status('Chargement impossible : ' + e.message, true); }
+}
 /** Lever et coucher du soleil derrière le relief lointain (pas de 2 min), avec cache par jour. */
 let farRS = null;
 function farRiseSet(ev) {
@@ -2616,10 +2658,10 @@ function drawDials(ctx, W, H, n, sun) {
     ctx.restore(); }
   const cur = dialAngle(day, mod(S.dMin, 1440));
   // ombre du style, puis style triangulaire (vers le midi solaire)
-  if (cur.alt > 0) {
+  {   // la nuit à l'adresse : aiguille estompée (le soleil peut encore éclairer ailleurs sur la carte)
     const ux = Math.sin(cur.a + rot), uy = -Math.cos(cur.a + rot), px = -uy, py = ux, Lm = R * 0.72;
-    ctx.fillStyle = 'rgba(35,30,25,0.78)'; ctx.beginPath(); ctx.moveTo(sx + px * 2.2, sy + py * 2.2); ctx.lineTo(sx + ux * Lm, sy + uy * Lm); ctx.lineTo(sx - px * 2.2, sy - py * 2.2); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#1e1a14'; ctx.beginPath(); ctx.arc(sx + ux * Lm, sy + uy * Lm, 3.5, 0, 7); ctx.fill();
+    ctx.globalAlpha = cur.alt > 0 ? 1 : 0.35; ctx.fillStyle = 'rgba(35,30,25,0.78)'; ctx.beginPath(); ctx.moveTo(sx + px * 2.2, sy + py * 2.2); ctx.lineTo(sx + ux * Lm, sy + uy * Lm); ctx.lineTo(sx - px * 2.2, sy - py * 2.2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#1e1a14'; ctx.beginPath(); ctx.arc(sx + ux * Lm, sy + uy * Lm, 3.5, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
   }
   { const gx = Math.sin(rot), gy = -Math.cos(rot), qx = -gy, qy = gx, Lg = R * 0.3;
     ctx.fillStyle = '#9c7b3a'; ctx.strokeStyle = '#5c4518'; ctx.lineWidth = 1;
@@ -2675,8 +2717,8 @@ function dialSetTime(p) {
   stopPlay();
   const target = dialAng(p, 'sundial') - dialRot, day = Math.round(S.day), d0 = S.minute - mod(S.minute, 1440);
   let best = null, bd = 1e9;
-  for (let m = 0; m < 1440; m += 2) {
-    const { a, alt } = dialAngle(day, m); if (alt <= 0) continue;
+  for (let m = 0; m < 1440; m += 1) {   // jour comme nuit : l'angle du cadran est continu sur 24 h
+    const { a } = dialAngle(day, m);
     const df = Math.abs(Math.atan2(Math.sin(a - target), Math.cos(a - target))); if (df < bd) { bd = df; best = m; }
   }
   if (best !== null) { S.minute = d0 + best; S.dMin = S.minute; changed(); }
@@ -2722,11 +2764,16 @@ function dialWheel(dir) {
   S.minute = d0 + 720 + nk * st; changed();
 }
 function dialUp(d) {
-  if (d.moved || d.kind === 'calendar') return;
-  if (d.kind === 'sundial') {   // midi : heure légale (par défaut) ou midi solaire, au choix dans le menu du cadran
+  if (d.moved) return;
+  const L = dialLayout(), p = { x: d.sx, y: d.sy }, c = d.kind === 'compass' ? [L.cx, L.cy, L.R] : d.kind === 'calendar' ? [L.kx, L.ky, L.R3] : [L.sx, L.sy, L.R];
+  const center = Math.hypot(p.x - c[0], p.y - c[1]) < c[2] * 0.22;   // clic au centre : midi (cadran) ou nord en haut (boussole)
+  if (d.kind === 'calendar') return dialMove({ ...d, moved: true }, p);
+  if (d.kind === 'sundial') {
+    if (!center) return dialSetTime(p);   // l'ombre du style va où l'on clique
     stopPlay();
     const ev = dayEvents(S.day, S.utcMode); S.minute = S.minute - mod(S.minute, 1440) + (S.noonClick === 'solar' ? Math.round(ev.noon) : 720); changed();
-  } else rotateView(null);
+  } else if (center) rotateView(null);
+  else { const a = dialAng(p, 'compass'); rotateView(Math.atan2(Math.sin(a - dialRot), Math.cos(a - dialRot))); }   // l'aiguille du nord va où l'on clique
 }
 
 /* ------------------------------------------------ Éditeur de toit (immeubles projetés) */
@@ -4151,7 +4198,9 @@ function context3D(p, cx, cy) {
   const dk = dialHit(p); if (dk) return menuDial(dk, cx, cy);
   if (roofContext(p, cx, cy)) return;
   const hit = pick3(p.x, p.y, true);
-  if (!hit) return menuBg(cx, cy, ground3pt(p.x, p.y));
+  const fp = S.farOn && S.far ? farPick(p.x, p.y) : null;   // point visé sur le relief lointain (Lambert-93)
+  if (fp && fp.out) return menuBg(cx, cy, null, fp);
+  if (!hit) return menuBg(cx, cy, ground3pt(p.x, p.y), fp);
   if (hit.kind === 'proj') { selectBuilding(hit.bi); return menuProj(S.building, hit.part, cx, cy); }
   if (hit.kind === 'nb') return menuNb(hit.c, cx, cy);
   if (hit.kind === 'tree') return menuTree(hit.t, cx, cy);
