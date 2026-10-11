@@ -2402,7 +2402,8 @@ function farMesh(T, o) {
     return z[j * w + i] * (1 - u) * (1 - v) + z[j * w + i + 1] * u * (1 - v) + z[(j + 1) * w + i] * (1 - u) * v + z[(j + 1) * w + i + 1] * u * v; };
   for (let b = 0; b <= n; b++) for (let a = 0; a <= n; a++) {
     const X = F.ax - o.half + a * o.step, Y = F.ay + o.half - b * o.step, r = o.inner, ins = !!r && X > r[0] && X < r[2] && Y > r[1] && Y < r[3];
-    IN.push(ins); P.push([(X - st.x0) * ppm, (zAt(X, Y) - o.zref - (ins ? o.drop : 0)) * ppm, (st.y1 - Y) * ppm]);
+    const x = (X - st.x0) * ppm, y = (st.y1 - Y) * ppm;   // sous le plan : 1 m sous son terrain précis (raccord continu au bord)
+    IN.push(ins); P.push([x, (ins ? terrainAt(x, y) - 1 : zAt(X, Y) - o.zref) * ppm, y]);
   }
   const at = (a, b) => P[clamp(b, 0, n) * (n + 1) + clamp(a, 0, n)], d = 2 * o.step * ppm;
   const nor = (a, b) => v3.norm([-(at(a + 1, b)[1] - at(a - 1, b)[1]) / d, 1, -(at(a, b + 1)[1] - at(a, b - 1)[1]) / d]);
@@ -3575,7 +3576,6 @@ void main() {
   else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
   vec3 col = base * k;
   if (tex || tree) col = clamp((col * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste, après l'éclairage (comme en 2D)
-  if (uFar > 0.5) col = mix(col, vec3(0.80, 0.84, 0.89), clamp(length(vPos - uEye) / uFog, 0.0, 0.65));   // brume du relief lointain
   oCol = vec4(col, crown ? uTreeOpa : 1.0);
 }`;
 const VS_DEPTH = `#version 300 es
@@ -3839,7 +3839,7 @@ function draw3d() {
   const gl = G.gl, W = S.clean.width, H = S.clean.height;
   uploadTextures(); buildNeighbors(); buildProject(); buildVeg(); const farOn = buildFar();
   const sun = curSun(), up = sun.alt > 0.05 && !farHidden(sun), L = up ? sunVec(sun) : [0, 1, 0];   // derrière le relief lointain : tout à l'ombre
-  const upR = sun.alt > 0.05, LR = upR ? sunVec(sun) : [0, 1, 0];   // vrai soleil, pour le relief lointain
+  const upR = sun.alt > -4, LR = upR ? sunVec(sun) : [0, 1, 0];   // relief lointain : la courbure de la Terre (relief abaissé) décide où le soleil est levé
   // matrice de la lumière (projection orthogonale englobant la scène)
   const ctr = [W / 2, 0, H / 2], R = Math.hypot(W, H), mh = maxSceneH() + 1;
   const lv = m4look(v3.add(ctr, v3.mul(L, R)), ctr, Math.abs(L[1]) > 0.99 ? [0, 0, -1] : [0, 1, 0]);
@@ -3865,7 +3865,7 @@ function draw3d() {
     const ppm = pxPerM(), st = S.site, F = S.far, bb = F.C ? F.C.bb : F.F.bb, ax = (bb[0] - st.x0) * ppm, bx = (bb[2] - st.x0) * ppm, az = (st.y1 - bb[3]) * ppm, bz = (st.y1 - bb[1]) * ppm;
     const cF = [(ax + bx) / 2, 0, (az + bz) / 2], RF = Math.hypot(bx - ax, bz - az), lvF = m4look(v3.add(cF, v3.mul(LR, RF)), cF, Math.abs(LR[1]) > 0.99 ? [0, 0, -1] : [0, 1, 0]);
     let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity, c0 = Infinity, c1 = -Infinity;
-    for (const X of [ax, bx]) for (const Y of [-6000 * ppm, 5000 * ppm]) for (const Z of [az, bz]) { const q = m4pt(lvF, [X, Y, Z]); a0 = Math.min(a0, q[0]); a1 = Math.max(a1, q[0]); b0 = Math.min(b0, q[1]); b1 = Math.max(b1, q[1]); c0 = Math.min(c0, q[2]); c1 = Math.max(c1, q[2]); }
+    for (const X of [ax, bx]) for (const Y of [-12000 * ppm, 5000 * ppm]) for (const Z of [az, bz]) { const q = m4pt(lvF, [X, Y, Z]); a0 = Math.min(a0, q[0]); a1 = Math.max(a1, q[0]); b0 = Math.min(b0, q[1]); b1 = Math.max(b1, q[1]); c0 = Math.min(c0, q[2]); c1 = Math.max(c1, q[2]); }
     LVPF = m4mul(m4ortho(a0, a1, b0, b1, -c1 - 10, -c0 + 10), lvF); fx0 = a0; fx1 = a1;
     gl.bindFramebuffer(gl.FRAMEBUFFER, G.fboF); gl.viewport(0, 0, G.smF, G.smF); gl.clear(gl.DEPTH_BUFFER_BIT);
     gl.uniformMatrix4fv(G.depth.u.uLVP, false, LVPF); drawBuf('farN'); drawBuf('farF'); drawBuf('farC');
