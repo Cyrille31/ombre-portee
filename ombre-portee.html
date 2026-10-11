@@ -874,7 +874,7 @@ function render(ctx, W, H, v, opt = {}) {
   const scen = [];
   if (b) {
     if (S.showScenario) S.scenario.forEach((e, i) => {
-      const off = offsetFor(e.day, e.minute, e.utc), s = sunFor(e.day, e.minute, off), so = shadowOffset(s, hM), col = SC_COLORS[i % SC_COLORS.length];
+      const mn = scenMin(e), off = offsetFor(e.day, mn, e.utc), s = sunFor(e.day, mn, off), so = shadowOffset(s, hM), col = SC_COLORS[i % SC_COLORS.length];
       const poly = so ? shadowPolyB(b, s) : null;
       if (shadowsPath(s)) { ctx.fillStyle = hexA(col, 0.2); ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.6 * px; ctx.stroke(); }
       scen.push({ e, so, col, poly });
@@ -1378,13 +1378,15 @@ $('mScale').onclick = () => $('btnScale').onclick();
 $('btnFit').onclick = () => S.view3d ? fit3d() : fitView();
 
 // scénario
-function addScen(day, minute, solar) {
+function addScen(day, minute, solar, live) {
   minute = Math.round(mod(minute, 1440));
-  if (S.scenario.some(e => e.day === day && e.minute === minute && e.utc === S.utcMode)) return;
-  const e = { day, minute, utc: S.utcMode }; if (solar !== undefined) e.solar = solar;
+  if (S.scenario.some(e => e.day === day && (live ? e.live : !e.live && e.minute === minute) && e.utc === S.utcMode)) return;
+  const e = { day, minute, utc: S.utcMode }; if (solar !== undefined) e.solar = solar; if (live) e.live = true;   // live : suit l'heure courante
   S.scenario.push(e);
 }
-const scenTime = e => fmtTime(e.minute) + (e.utc ? ' TU' : '') + (e.solar !== undefined ? ' (' + e.solar + ' h sol.)' : '');
+/** Heure (min) d'un instant du scénario : la sienne, ou l'heure courante pour les modèles « à l'heure courante ». */
+const scenMin = e => e.live ? mod(S.dMin, 1440) : e.minute;
+const scenTime = e => fmtTime(scenMin(e)) + (e.utc ? ' TU' : '') + (e.solar !== undefined ? ' (' + e.solar + ' h sol.)' : '') + (e.live ? ' (heure courante)' : '');
 /** Heure affichée (min) correspondant à l'heure solaire vraie H ce jour-là. */
 function solarToShown(day, H) {
   let m = H * 60;
@@ -1402,6 +1404,7 @@ $('scenPreset').onchange = e => {
   let nAdd = 0, nNight = 0;
   // ajoute l'instant (heure fixe H : légale ou solaire selon l'option), sauf s'il fait nuit
   const add = (day, H, minute) => {
+    if (minute !== undefined && H === undefined) { addScen(day, minute, undefined, true); nAdd++; return; }   // à l'heure courante : suit l'heure
     const solar = H !== undefined && S.solarPresets;
     if (H !== undefined) minute = solar ? solarToShown(day, H) : H * 60;
     const mm = Math.round(mod(minute, 1440));
@@ -1496,7 +1499,7 @@ function syncUI() {
     const li = document.createElement('li');
     li.innerHTML = `<span class="sw" style="background:${SC_COLORS[i % SC_COLORS.length]}"></span><span class="t">${fmtDate(e.day)} — ${scenTime(e)}${e.utc ? '' : ' <span class="hint">loc.</span>'}</span>`;
     const go = document.createElement('button'); go.className = 'small'; go.textContent = '→'; go.title = 'Aller à cet instant';
-    go.onclick = () => { if (e.utc !== S.utcMode) setUtcMode(e.utc); S.day = e.day; S.minute = S.minute - mod(S.minute, 1440) + e.minute; changed(); };
+    go.onclick = () => { if (e.utc !== S.utcMode) setUtcMode(e.utc); S.day = e.day; if (!e.live) S.minute = S.minute - mod(S.minute, 1440) + e.minute; changed(); };
     const x = document.createElement('button'); x.className = 'small'; x.textContent = '×'; x.title = 'Supprimer';
     x.onclick = () => { S.scenario.splice(i, 1); changed(); };
     li.append(go, x); sl.appendChild(li);
