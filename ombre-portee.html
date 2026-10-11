@@ -3276,6 +3276,7 @@ function strokeRoofEdges3(ctx, ci, b, T, style) {
       const P = t => toScreen3(ci.VP, [W[i][0] + (W[j][0] - W[i][0]) * t, W[i][1] + (W[j][1] - W[i][1]) * t, W[i][2] + (W[j][2] - W[i][2]) * t]);
       const a = P(t0), c = P(t1); if (!a || !c) continue;
       if (style.halo && style.halo[ei] && !h) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }
+      else if (style.casing && !h) { ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); }   // liseré : lisible sur tout toit
       ctx.setLineDash(h && style.dash ? [4, 4] : []); ctx.globalAlpha = veg ? ta * (style.dash ? 0.9 : 1) : h ? 0.75 : 1;
       ctx.strokeStyle = style.col(bd, ei); ctx.lineWidth = h ? 1.5 : style.w; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
       ctx.setLineDash([]); ctx.globalAlpha = 1;
@@ -3298,13 +3299,13 @@ function drawRoofEditor(ctx, ci) {
   const b = roofB(); if (!b) return;
   const R = b.roofE, mv = roofMovable(b), sc = R.n.map(nd => reScreen(b, nd, ci));
   ctx.lineCap = 'round';
-  if (ci && S.showProj) strokeRoofEdges3(ctx, ci, b, projTris(), { all: true, dash: true, halo: mv.edges, col: bd => bd ? BLD_DARK : '#7c2d12', w: 2 });
+  if (ci && S.showProj) strokeRoofEdges3(ctx, ci, b, projTris(), { all: true, dash: true, halo: mv.edges, casing: true, col: bd => bd === 1 ? '#374151' : '#111827', w: 2.2 });
   else R.e.forEach(([i, j, bd], ei) => { const A = sc[i], B = sc[j]; if (!A || !B) return;
-    if (mv.edges[ei]) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); }
-    ctx.strokeStyle = bd ? BLD_DARK : '#7c2d12'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); });
+    ctx.strokeStyle = 'rgba(255,255,255,' + (mv.edges[ei] ? 0.95 : 0.8) + ')'; ctx.lineWidth = mv.edges[ei] ? 7 : 4.5; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+    ctx.strokeStyle = bd === 1 ? '#374151' : '#111827'; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); });
   sc.forEach((q, k) => { if (!q) return;
     if (mv.nodes[k]) { ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(q.x, q.y, 8, 0, 7); ctx.stroke(); }
-    ctx.fillStyle = mv.nodes[k] ? '#7c2d12' : '#444'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, 7); ctx.fill(); });
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q.x, q.y, 5, 0, 7); ctx.fill(); ctx.fillStyle = mv.nodes[k] ? '#111827' : '#6b7280'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, 7); ctx.fill(); });
   // survol : halo bleu sur le point ou le segment visé
   const hv = D0 => { if (!D0) return; ctx.strokeStyle = 'rgba(14,165,233,0.9)';
     if (D0.k !== undefined && sc[D0.k]) { ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(sc[D0.k].x, sc[D0.k].y, 10, 0, 7); ctx.stroke(); }
@@ -3317,11 +3318,13 @@ function drawRoofEditor(ctx, ci) {
     const toSc = P => reScreen(b, { ...reUV(b, P), d: reD(b, P) }, ci);
     const a = toSc(D.A), c = toSc(D.B);
     if (a && c) {
-      ctx.setLineDash([6, 4]); ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); ctx.setLineDash([]);
-      if (D.B.stop) { ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.strokeRect(c.x - 6, c.y - 6, 12, 12); }   // arrêt : longueur du 1er côté
-      if (D.B.mid) { ctx.strokeStyle = '#d6336c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x, c.y - 8); ctx.lineTo(c.x + 8, c.y); ctx.lineTo(c.x, c.y + 8); ctx.lineTo(c.x - 8, c.y); ctx.closePath(); ctx.stroke(); }   // milieu du toit
+      // trait en cours : jaune vif bordé de noir, visible sur toutes les couleurs de toit
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+      ctx.setLineDash([7, 4]); ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.stroke(); ctx.setLineDash([]);
+      if (D.B.stop) { ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 2; ctx.strokeRect(c.x - 6, c.y - 6, 12, 12); }   // arrêt : longueur du 1er côté
+      if (D.B.mid) { ctx.strokeStyle = '#ffd60a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(c.x, c.y - 8); ctx.lineTo(c.x + 8, c.y); ctx.lineTo(c.x, c.y + 8); ctx.lineTo(c.x - 8, c.y); ctx.closePath(); ctx.stroke(); }   // milieu du toit
       const L = dist(rmx(b, reUV(b, D.A)), rmx(b, reUV(b, D.B))), t = fmtNum(L, 1) + ' m'; ctx.font = 'bold 12px system-ui, sans-serif';
-      const w = ctx.measureText(t).width + 12; drawLabel(ctx, { x: (a.x + c.x) / 2 - w / 2, y: (a.y + c.y) / 2 - 24, w, h: 19 }, t, '#d6336c', null);
+      const w = ctx.measureText(t).width + 12; drawLabel(ctx, { x: (a.x + c.x) / 2 - w / 2, y: (a.y + c.y) / 2 - 24, w, h: 19 }, t, '#111827', null);
     }
   }
 }
