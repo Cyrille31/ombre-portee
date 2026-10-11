@@ -16,11 +16,17 @@ Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la 
 - le **relief** : modèle de terrain LiDAR HD au demi-mètre, complété par le RGE ALTI là où le LiDAR manque.
 - les **arbres** : hauteur de la végétation = modèle de surface LiDAR HD − terrain, hors bâtiments. Chaque houppier est repéré et dessiné en arbre (tronc jusqu'au quart de la hauteur, houppier qui s'évase dès le tiers) ; haies et arbustes restent en masse continue. La case « Arbres » les affiche ou les masque aussitôt, et « Transparence arbres » atténue leur feuillage et leurs ombres (arbres dénudés en hiver).
 
-La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (rectangle vert, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
+La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (murs blancs et toit de tuiles par défaut, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
 Il faut une connexion Internet au moment du chargement. Une fois enregistré, le projet contient toutes les données et s'ouvre hors ligne.
 
 **Agrandir la zone** : des poignées bleues sont placées aux coins et au milieu des bords du plan (en 2D et en 3D). Glissez-en une : le nouveau rectangle s'affiche avec ses dimensions, puis il est rechargé (jusqu'à 1 000 m de côté). Les immeubles ajoutés, la vue et les réglages sont conservés. Les bâtiments sont découpés au bord du plan : seules les parties sur le plan sont gardées.
+
+### Relief lointain : zone de 500 km
+
+Dans « Zone de », le choix **500 km (relief lointain)** charge un carré de 500 km de côté centré sur l'adresse, en faible définition (relief à 1 km : RGE ALTI en France, SRTM au-delà, Pyrénées espagnoles et Alpes comprises), avec une photo satellite grossière, le plan IGN et les noms des principales villes (plus de 40 000 habitants), mais sans bâtiments. Le relief est abaissé de d²/2R avec la distance d à l'adresse pour tenir compte de la **rotondité de la Terre** (R = rayon terrestre corrigé de la réfraction atmosphérique standard, k = 0,13). En 3D, les montagnes portent leurs ombres et sont ombrées selon le soleil ; les hauteurs sont à l'échelle réelle (relief peu marqué vu de loin : zoomer). Les ombres sont exactes vues de l'adresse ; loin d'elle, la direction du soleil varie légèrement.
+
+Le logiciel calcule aussi le **profil d'horizon** vu de l'adresse (tous les ½°, à 2 m du sol). Chargez ensuite un site de 100 à 800 m à la même adresse (à moins de 15 km) : quand le soleil passe derrière le relief, tout le site est à l'ombre (en 2D comme en 3D), l'information sur le soleil l'indique avec les heures où il est réellement visible, et la boussole grise la partie du ciel masquée par les montagnes. L'horizon est enregistré avec le projet.
 
 ## Préparer un plan (image ou PDF)
 
