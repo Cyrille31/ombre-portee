@@ -1553,7 +1553,7 @@ function projectData() {
     app: 'ombre-portee', version: 1, fileName: S.fileName, image: S.origDataURL || canvasURL(S.clean, true),
     buildings: S.buildings, sel: S.sel, scale: S.scale, lat: S.lat, lon: S.lon, tzStd: S.tzStd, dstAuto: S.dstAuto,
     utcMode: S.utcMode, north: S.north, day: S.day, minute: mod(S.minute, 1440), traj: S.traj.map(({ u, v, corner, bid }) => ({ u, v, corner, bid })),
-    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, nbRoof: S.nbRoof || null, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, noonClick: S.noonClick, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
+    scenario: S.scenario, showScenario: S.showScenario, showCurrent: S.showCurrent, opacity: S.opacity, showOrig: S.showOrig, showDims: S.showDims, showNbLbl: S.showNbLbl, showTrees: S.showTrees, showProj: S.showProj, showProjShadow: S.showProjShadow, nbFac: S.nbFac, nbRoof: S.nbRoof, bright: S.bright, contrast: S.contrast, treeT: S.treeT, bgMode: S.bgMode, showCad: S.showCad, hHigh: S.hHigh, dialStep: S.dialStep, noonClick: S.noonClick, calStep: S.calStep, compStep: S.compStep, crownBase: S.crownBase,
     solarPresets: S.solarPresets, defH: S.defH, nbHeights: S.site ? [] : savedHeights(), site: siteForSave(),
     view: { view3d: S.view3d, v2: { ...toW({ x: CW / 2, y: CH / 2 }), s: V.s, rot: V.rot }, cam: G.camSet ? { ...G.cam } : null }
   };
@@ -2405,8 +2405,10 @@ function farMesh(T, o) {
     return z[j * w + i] * (1 - u) * (1 - v) + z[j * w + i + 1] * u * (1 - v) + z[(j + 1) * w + i] * (1 - u) * v + z[(j + 1) * w + i + 1] * u * v; };
   for (let b = 0; b <= n; b++) for (let a = 0; a <= n; a++) {
     const X = F.ax - o.half + a * o.step, Y = F.ay + o.half - b * o.step, r = o.inner, ins = !!r && X > r[0] && X < r[2] && Y > r[1] && Y < r[3];
-    const x = (X - st.x0) * ppm, y = (st.y1 - Y) * ppm;   // sous le plan : 1 m sous son terrain précis (raccord continu au bord)
-    IN.push(ins); P.push([x, (ins ? terrainAt(x, y) - 1 : zAt(X, Y) - o.zref) * ppm, y]);
+    const x = (X - st.x0) * ppm, y = (st.y1 - Y) * ppm, W = S.clean.width, H = S.clean.height;
+    // près du plan (à moins d'une maille) : hauteur du terrain précis au bord le plus proche → raccord continu ; le plan lui-même masque le reste
+    const dOut = Math.max(0, -x, x - W, -y, y - H) / ppm, nearP = !!r && dOut < o.step * 1.01;
+    IN.push(ins); P.push([x, (nearP ? terrainAt(clamp(x, 0, W), clamp(y, 0, H)) : zAt(X, Y) - o.zref) * ppm, y]);
   }
   const at = (a, b) => P[clamp(b, 0, n) * (n + 1) + clamp(a, 0, n)], d = 2 * o.step * ppm;
   const nor = (a, b) => v3.norm([-(at(a + 1, b)[1] - at(a - 1, b)[1]) / d, 1, -(at(a, b + 1)[1] - at(a, b - 1)[1]) / d]);
@@ -3520,7 +3522,7 @@ precision highp float; precision highp sampler2DShadow;
 uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
 uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
 uniform float uBright; uniform float uContrast; uniform float uTreeOpa; uniform float uShadowK; uniform float uRelief;
-uniform vec2 uPlanOrig; uniform float uFar; uniform vec3 uEye; uniform float uFog;
+uniform vec2 uPlanOrig; uniform float uFar; uniform vec3 uEye; uniform float uFog; uniform vec4 uHole;
 in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL; in vec2 vUV; in float vFac;
 out vec4 oCol;
 // façades dessinées à l'échelle (m) : 1 = logements, 2 = bureaux, 3 = hangar
@@ -3567,6 +3569,7 @@ float lit() {
 }
 void main() {
   if (vId > 0.5 && abs(idAt(vPos.xz) - vId) > 0.5) discard;
+  if (uFar > 0.5 && vPos.x > uHole.x && vPos.x < uHole.z && vPos.z > uHole.y && vPos.z < uHole.w) discard;   // relief lointain : jamais sur le plan
   vec3 n = normalize(vNor);
   float nd = dot(n, uSun), l = nd > 0.0 ? lit() : 0.0, k;
   // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
@@ -3745,7 +3748,7 @@ function treeGeo(g, t, ppm) {
 }
 const nbBase = c => c.base !== undefined ? c.base : 0;
 const nbFac = c => c.fac !== undefined ? c.fac : S.nbFac;
-const nbRoof = c => c.roofCol !== undefined ? c.roofCol : S.nbRoof || null;   // null : photo   // altitude du pied (m, relative au point de référence)
+const nbRoof = c => c.roofCol !== undefined ? c.roofCol : S.nbRoof !== undefined ? S.nbRoof : NB_ROOFS[1][1];   // null : photo ; par défaut : tuiles   // altitude du pied (m, relative au point de référence)
 function buildNeighbors() {
   const ppm = pxPerM(), key = [NB ? NB.ver : 0, S.hVer, S.defH, ppm, S.terrain ? 1 : 0, S.nbFac, S.nbRoof].join('|');
   if (key === G.nbKey) return; G.nbKey = key;
@@ -3795,7 +3798,7 @@ function buildProject() {
     buildingGeo(g, b, pg.foot * ppm, pg.ground * ppm, ppm);
   }
   setBuf('proj', g);
-  const W = S.clean.width, H = S.clean.height, key = [W, H, ppm].join('|');
+  const W = S.clean.width, H = S.clean.height, skirt = !!(S.farOn && S.far), key = [W, H, ppm, skirt].join('|');
   if (key === G.groundKey && G.groundObj === S.terrain) return;
   G.groundKey = key; G.groundObj = S.terrain;
   const gg = new Geo();
@@ -3812,6 +3815,12 @@ function buildProject() {
     for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
       const q = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j], [i + 1, j + 1], [i, j + 1]];
       for (const [a, b] of q) gg.v(V(a, b), nor(a, b), C, 0);
+    }
+    if (skirt) {   // relief lointain : bord du plan prolongé de 30 m vers le bas (pas de fente au raccord)
+      const dn = v => [v[0], v[1] - 30 * ppm, v[2]], E = [];
+      for (let i = 0; i < nx; i++) E.push([[i, 0], [i + 1, 0], [0, -1]], [[i + 1, ny], [i, ny], [0, 1]]);
+      for (let j = 0; j < ny; j++) E.push([[nx, j], [nx, j + 1], [1, 0]], [[0, j + 1], [0, j], [-1, 0]]);
+      for (const [[a1, b1], [a2, b2], [ex, ez]] of E) { const P1 = V(a1, b1), P2 = V(a2, b2), n = [ex, 0, ez]; for (const v of [P1, P2, dn(P2), P1, dn(P2), dn(P1)]) gg.v(v, n, C, 0); }
     }
   }
   setBuf('ground', gg);
@@ -3900,7 +3909,7 @@ function draw3d() {
     const ppm = pxPerM(), st = S.site, F = S.far;
     gl.uniformMatrix4fv(m.u.uLVP, false, LVPF); gl.uniform1f(m.u.uNOff, (fx1 - fx0) / G.smF * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.smF);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
-    gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm);
+    gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm); gl.uniform4f(m.u.uHole, 0.5, 0.5, W - 0.5, H - 0.5);
     for (const [buf, T, tx, bb] of [['farN', F.F, G.farTexN, F.bb.N], ['farF', F.F, G.farTexF, F.bb.F], ['farC', F.C, G.farTexC, F.bb.C]]) {
       if (!T) continue;
       gl.uniform2f(m.u.uPlanOrig, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm); gl.uniform2f(m.u.uPlanSize, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm);
