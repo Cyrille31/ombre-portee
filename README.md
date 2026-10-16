@@ -1,3 +1,5 @@
+<img src="logo.svg" alt="" width="96" align="right">
+
 # Ombre portée
 
 Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
