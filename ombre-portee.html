@@ -2454,6 +2454,49 @@ function buildFar() {
   }
   return !!tx;
 }
+/** Raccord de couleur entre deux niveaux : gains RVB (32 tranches du périmètre de rect) qui rendent l'image extérieure
+ *  égale à l'image intérieure dans une bande le long du bord. rect, innerBB, outerBB : [x0, y0, x1, y1] en Lambert-93 (m). */
+const SEAM_N = 32;
+function seamGains(rect, inner, innerBB, outer, outerBB) {
+  const rw = rect[2] - rect[0], rh = rect[3] - rect[1], k = 400 / Math.max(rw, rh), cw = Math.max(16, Math.round(rw * k)), ch = Math.max(16, Math.round(rh * k));
+  const grab = (img, bb) => {
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const x = c.getContext('2d', { willReadFrequently: true }), sx = img.width / (bb[2] - bb[0]), sy = img.height / (bb[3] - bb[1]);
+    x.drawImage(img, (rect[0] - bb[0]) * sx, (bb[3] - rect[3]) * sy, rw * sx, rh * sy, 0, 0, cw, ch);
+    return x.getImageData(0, 0, cw, ch).data;
+  };
+  const A = grab(inner, innerBB), B = grab(outer, outerBB), bw = Math.max(3, Math.round(Math.min(cw, ch) * 0.06)), P = 2 * (cw + ch);
+  const sum = new Float64Array(SEAM_N * 7);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const dT = y, dR = cw - 1 - x, dB = ch - 1 - y, dL = x, d = Math.min(dT, dR, dB, dL);
+    if (d >= bw) { x = cw - bw - 1; continue; }   // seulement la bande du bord : saut à la bande de droite
+    const t = d === dT ? x : d === dR ? cw + y : d === dB ? cw + ch + (cw - x) : 2 * cw + ch + (ch - y);
+    const i = Math.min(SEAM_N - 1, Math.floor(t / P * SEAM_N)) * 7, o = (y * cw + x) * 4;
+    for (let c = 0; c < 3; c++) { sum[i + c] += A[o + c]; sum[i + 3 + c] += B[o + c]; }
+    sum[i + 6]++;
+  }
+  let g = [];
+  for (let i = 0; i < SEAM_N; i++) {
+    const n = sum[i * 7 + 6];
+    g.push([0, 1, 2].map(c => n ? clamp((sum[i * 7 + c] + 8 * n) / (sum[i * 7 + 3 + c] + 8 * n), 0.6, 1.7) : 1));
+  }
+  for (let pass = 0; pass < 2; pass++) g = g.map((_, i) => [0, 1, 2].map(c => [-2, -1, 0, 1, 2].reduce((a, j, q) => a + [1, 2, 3, 2, 1][q] * g[(i + j + SEAM_N) % SEAM_N][c], 0) / 9));   // lissage le long du bord
+  return new Float32Array(g.flat());
+}
+/** Gains des trois raccords (plan → anneau proche → 50 km → 500 km), recalculés si les images changent. */
+function farSeams(F, tx) {
+  const st = S.site, key = [tx.id, F.ver, st.x0, st.y1, st.Lx, st.Ly].join('|');
+  if (G.seam && G.seam.key === key && G.seam.src === S.clean) return G.seam;
+  const plan = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1], fR = [F.ax - 25000, F.ay - 25000, F.ax + 25000, F.ay + 25000];
+  const one = new Float32Array(SEAM_N * 3).fill(1), safe = f => { try { return f(); } catch (e) { console.warn(e); return one; } };
+  G.seam = {
+    key, src: S.clean,
+    N: { rect: plan, g: safe(() => seamGains(plan, S.clean, plan, tx.N, F.bb.N)), fade: clamp(0.6 * Math.min(st.Lx, st.Ly), 300, 1500), flat: 1 },
+    F: { rect: F.bb.N, g: safe(() => seamGains(F.bb.N, tx.N, F.bb.N, tx.F, F.bb.F)), fade: 3000, flat: 0 },
+    C: { rect: fR, g: safe(() => seamGains(fR, tx.F, F.bb.F, tx.C, F.bb.C)), fade: 15000, flat: 0 }
+  };
+  return G.seam;
+}
 /** Hauteur (px) du relief lointain au point (x, z) de la vue 3D ; sur le plan, terrain précis. */
 function farH(x, z) {
   const F = S.far, st = S.site, ppm = pxPerM(), W = S.clean.width, H = S.clean.height;
@@ -3574,6 +3617,8 @@ uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShado
 uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
 uniform float uBright; uniform float uContrast; uniform float uTreeOpa; uniform float uShadowK; uniform float uRelief;
 uniform vec2 uPlanOrig; uniform float uFar; uniform vec3 uEye; uniform float uFog; uniform vec4 uHole;
+// raccord de couleur du relief lointain : rectangle intérieur (x0, z0, x1, z1), largeur du fondu, éclairage plat au raccord, gains RVB le long du périmètre
+uniform vec4 uSeam; uniform float uSeamFade; uniform float uSeamFlat; uniform vec3 uSeamG[32];
 in vec3 vPos; in vec3 vNor; in vec4 vCol; in float vId; in vec4 vL; in vec2 vUV; in float vFac;
 out vec4 oCol;
 // façades dessinées à l'échelle (m) : 1 = logements, 2 = bureaux, 3 = hangar
@@ -3626,10 +3671,21 @@ void main() {
   // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
   bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
   vec3 base = tex ? texture(uPlan, (vPos.xz - uPlanOrig) / uPlanSize).rgb : vCol.rgb;
+  float sw = 0.0;   // poids du raccord : 1 au bord du niveau plus fin, 0 au-delà de uSeamFade
+  if (uFar > 0.5 && uSeamFade > 0.0) {
+    vec4 r = uSeam; vec2 q = clamp(vPos.xz, r.xy, r.zw);
+    sw = 1.0 - smoothstep(0.0, uSeamFade, length(vPos.xz - q));
+    if (sw > 0.0) {   // gain du point le plus proche du bord, interpolé entre les 32 tranches du périmètre
+      float w = r.z - r.x, h = r.w - r.y, t;
+      if (vPos.z <= r.y) t = q.x - r.x; else if (vPos.x >= r.z) t = w + q.y - r.y; else if (vPos.z >= r.w) t = w + h + r.z - q.x; else t = 2.0 * w + h + r.w - q.y;
+      float f = t / (2.0 * (w + h)) * 32.0 - 0.5, fi = floor(f);
+      base *= mix(vec3(1.0), mix(uSeamG[int(mod(fi, 32.0))], uSeamG[int(mod(fi + 1.0, 32.0))], f - fi), sw);
+    }
+  }
   if (vFac > 0.5 && abs(n.y) < 0.3) base = facade(base, vFac, vUV);
   // uShadowK : clarté à l'ombre, réglée par « Opacité de l'ombre »
   // sol et toits : un pan incliné s'éclaire selon l'angle du soleil (dégradé), relativement à un toit plat
-  if (n.y > 0.5) k = mix(uShadowK, 1.0, l * ((tex && uRelief < 0.5) || n.y > 0.9995 ? 1.0 : clamp(nd / max(uSun.y, 0.15), 0.0, 1.3)));   // uRelief : ombrage du relief (zone de 500 km)
+  if (n.y > 0.5) k = mix(uShadowK, 1.0, l * ((tex && uRelief < 0.5) || n.y > 0.9995 ? 1.0 : mix(clamp(nd / max(uSun.y, 0.15), 0.0, 1.3), 1.0, sw * uSeamFlat)));   // au raccord avec le plan : éclairé comme le plan   // uRelief : ombrage du relief (zone de 500 km)
   else k = mix(uShadowK * 0.85, 1.0, l * (0.35 + 0.65 * max(nd, 0.0)));   // murs
   vec3 col = base * k;
   if (tex || tree) col = clamp((col * uBright - 0.5) * uContrast + 0.5, 0.0, 1.0);   // luminosité / contraste, après l'éclairage (comme en 2D)
@@ -3961,13 +4017,18 @@ function draw3d() {
     gl.uniformMatrix4fv(m.u.uLVP, false, LVPF); gl.uniform1f(m.u.uNOff, (fx1 - fx0) / G.smF * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.smF);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
     gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm); gl.uniform4f(m.u.uHole, 0.5, 0.5, W - 0.5, H - 0.5);
-    for (const [buf, T, tx, bb] of [['farN', F.F, G.farTexN, F.bb.N], ['farF', F.F, G.farTexF, F.bb.F], ['farC', F.C, G.farTexC, F.bb.C]]) {
+    const txs = F.tex[farMode()] || F.tex.ortho || F.tex.plan, sm = txs ? farSeams(F, txs) : null;
+    for (const [buf, T, tx, bb, lv] of [['farN', F.F, G.farTexN, F.bb.N, 'N'], ['farF', F.F, G.farTexF, F.bb.F, 'F'], ['farC', F.C, G.farTexC, F.bb.C, F.F ? 'C' : null]]) {
       if (!T) continue;
       gl.uniform2f(m.u.uPlanOrig, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm); gl.uniform2f(m.u.uPlanSize, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm);
+      const se = sm && sm[lv];   // raccord de couleur avec le niveau plus fin
+      if (se) { const r = se.rect; gl.uniform4f(m.u.uSeam, (r[0] - st.x0) * ppm, (st.y1 - r[3]) * ppm, (r[2] - st.x0) * ppm, (st.y1 - r[1]) * ppm); gl.uniform1f(m.u.uSeamFade, se.fade * ppm); gl.uniform1f(m.u.uSeamFlat, se.flat); gl.uniform3fv(m.u['uSeamG[0]'], se.g); }
+      else gl.uniform1f(m.u.uSeamFade, 0);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tx); drawBuf(buf);
     }
     gl.uniformMatrix4fv(m.u.uLVP, false, LVP); gl.uniform1f(m.u.uNOff, (x1 - x0) / G.sm * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.sm);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.planTex);
+    gl.uniform1f(m.u.uSeamFade, 0);
     gl.uniform1f(m.u.uTreeOpa, opa); gl.uniform1f(m.u.uRelief, 0); gl.uniform1f(m.u.uFar, 0); gl.uniform3fv(m.u.uSun, L); gl.uniform1f(m.u.uSunUp, up ? 1 : 0); gl.uniform2f(m.u.uPlanOrig, 0, 0); gl.uniform2f(m.u.uPlanSize, W, H);
   }
   if (S.showTrees) {   // arbres en dernier : feuillage éventuellement transparent
