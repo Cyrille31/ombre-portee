@@ -6,6 +6,8 @@ Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
 
 ## Lancement
 
+Le bouton **❓ Mode d'emploi** (barre du haut) résume l'utilisation et indique la **version** du logiciel et sa **licence** (MIT, voir `LICENSE`).
+
 Aucune installation : double-cliquez sur **`ombre-portee.html`**. Le fichier s'ouvre dans votre navigateur (Chrome, Edge ou Firefox, sur PC).
 L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir un PDF et pour lire automatiquement la longueur de l'échelle.
 
@@ -15,7 +17,7 @@ Le même fichier fonctionne sur téléphone : ouvrez le lien GitHub Pages (ou le
 
 - le panneau des réglages se range dans un tiroir, ouvert par le bouton **☰** en haut à gauche ; touchez la zone grisée pour le refermer ;
 - la boussole, le cadran solaire et le calendrier sont côte à côte en haut de l'écran ; la date et l'heure sont en bas (en haut à droite quand le téléphone est à l'horizontale) ;
-- la barre d'outils défile horizontalement (sans le bouton « Plan de démonstration »).
+- la barre d'outils défile horizontalement.
 
 | Geste | Effet |
 |---|---|
@@ -39,7 +41,7 @@ Aucun immeuble projeté n'est placé au départ : ajoutez-le avec **+ Immeuble**
 
 La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (murs blancs et toit de tuiles par défaut, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
-Le serveur de l'IGN est parfois lent ou en panne passagère, surtout pour les grandes images. Les couches sont donc téléchargées en morceaux. Une couche non reçue (photo, plan, cadastre, ou arbres) est signalée par un **⚠** à côté de sa case, et le logiciel réessaie seul (après 4 s, 20 s, 1 min puis 3 min). Les essais continuent ensuite toutes les 3 minutes tant que la couche manque, et reprennent aussitôt quand le réseau revient ou que l'onglet est de nouveau affiché. Un clic sur le ⚠ réessaie aussitôt. Pour le relief lointain, une image manquante est remplacée en attendant par la même zone tirée de l'image moins fine du niveau supérieur. Si aucune image n'arrive, le site s'ouvre quand même sur fond blanc, avec les bâtiments et le relief.
+Le serveur de l'IGN est parfois lent ou en panne passagère, surtout pour les grandes images. Les couches sont donc téléchargées en morceaux. Une couche non reçue (photo, plan, cadastre, arbres ou images du relief lointain) est signalée par un **⚠** à côté de sa case, et le logiciel réessaie seul (après 4 s, 20 s, 1 min puis 3 min). Les essais continuent ensuite toutes les 3 minutes tant que la couche manque, et reprennent aussitôt quand le réseau revient ou que l'onglet est de nouveau affiché. Un clic sur le ⚠ réessaie aussitôt. Pour le relief lointain, une image manquante est remplacée en attendant par la même zone tirée de l'image moins fine du niveau supérieur. Si aucune image n'arrive, le site s'ouvre quand même sur fond blanc, avec les bâtiments et le relief. Le fond affiché est toujours celui choisi : tant que le plan IGN (ou la photo) manque, le fond reste blanc au lieu d'afficher l'autre couche.
 
 Il faut une connexion Internet au moment du chargement. Une fois enregistré, le projet contient toutes les données et s'ouvre hors ligne.
 
@@ -66,7 +68,6 @@ La case **Relief lointain** (décochée au lancement) télécharge, autour de l'
 - Le nord est supposé en haut du plan. Sinon, indiquez l'angle dans « Nord du plan ».
 
 À l'ouverture, le rectangle vert est détecté puis effacé du fond de plan. Il devient l'immeuble, que l'on peut déplacer et modifier.
-Le bouton **Plan de démonstration** permet d'essayer le logiciel sans fichier.
 
 Le lieu par défaut est Toulouse.
 

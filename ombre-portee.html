@@ -57,7 +57,7 @@ body.noaide .aide{display:none!important}
 #clockBox .row{flex-direction:column;align-items:stretch}
 #clockBox .row>*{width:100%}
 #clockBox label{font-size:12px;text-align:left;cursor:pointer}
-#clockBox .grp{border:1px solid #c9d1de;border-radius:7px;padding:2px 6px;display:flex;flex-direction:column;gap:1px;background:#f7f9fc}
+#clockBox .grp{display:flex;flex-direction:column;gap:1px}
 #clockBox label.off{opacity:.45}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
@@ -74,6 +74,16 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #status{padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status.msg{color:var(--text)}
 #printArea{display:none}
+#helpShade{position:fixed;inset:0;z-index:50;background:rgba(15,20,35,.45);display:flex;align-items:center;justify-content:center;padding:12px}
+#helpBox{background:#fff;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.35);max-width:760px;width:100%;max-height:calc(100dvh - 24px);display:flex;flex-direction:column}
+#helpBox .hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+#helpBox .hd b{font-size:16px}
+#helpBox .bd{overflow-y:auto;padding:4px 16px 16px;font-size:13.5px;line-height:1.5}
+#helpBox h3{font-size:14px;margin:14px 0 4px;color:#1d3a8a}
+#helpBox table{border-collapse:collapse;width:100%;font-size:13px}
+#helpBox td{border-top:1px solid var(--line);padding:3px 6px;vertical-align:top}
+#helpBox td:first-child{white-space:nowrap;font-weight:600;width:1%}
+#helpBox pre{white-space:pre-wrap;font-size:11.5px;background:#f6f7f9;border:1px solid var(--line);border-radius:6px;padding:8px}
 #gl,#ov{position:absolute;inset:0;width:100%;height:100%;display:block}
 #gl{touch-action:none}
 #ov{pointer-events:none}
@@ -102,7 +112,7 @@ body.mobile #toolbar{flex-wrap:nowrap;overflow-x:auto;padding:4px 6px;scrollbar-
 body.mobile #toolbar::-webkit-scrollbar{display:none}
 body.mobile #toolbar>*{flex:none}
 body.mobile #toolbar .sep{display:none}
-body.mobile #btnDemo{display:none}
+body.mobile #btnDemo,body.mobile .nomob{display:none}
 body.mobile #btnMenu{font-size:20px;line-height:1;padding:2px 10px}
 body.mobile button,body.mobile select{min-height:34px}
 body.mobile input[type=text],body.mobile select,body.mobile textarea{font-size:16px}
@@ -281,8 +291,9 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
 <main>
   <div id="toolbar">
     <button id="btnMenu" class="mob" title="Afficher les réglages">☰</button>
+    <button id="btnHelp" title="Mode d'emploi, version et licence">❓<span class="nomob"> Mode d'emploi</span></button>
     <button id="btnOpen" title="Image (PNG, JPG…), PDF ou projet .ombre.json">📂 Ouvrir…</button>
-    <button id="btnDemo">Plan de démonstration</button>
+    <button id="btnDemo" hidden>Plan de démonstration</button>
     <span class="sep"></span>
     <button id="btnSaveProj" title="Enregistre le plan et tous les réglages pour les rouvrir plus tard">💾 Enregistrer le projet</button>
     <button id="btnSavePlan" title="Image du plan d'origine avec l'immeuble à sa nouvelle position">🖼 Enregistrer le plan modifié</button>
@@ -307,7 +318,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
         </select>
         <button id="btnNow">Maintenant</button>
         <div class="grp" title="Afficher">
-          <label title="Immeubles projetés et leur ombre (décocher pour mieux voir les ombres d'un scénario ou les arbres)"><input type="checkbox" id="cbProj" checked> Immeuble + ombre</label>
+          <label title="Immeubles projetés et leur ombre (décocher pour mieux voir les ombres d'un scénario ou les arbres)"><input type="checkbox" id="cbProj" checked> Immeuble</label>
           <label title="Arbres (site IGN avec LiDAR)"><input type="checkbox" id="cbTrees" checked> Arbres</label>
         </div>
         <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cbPhoto" checked> Photo</label>
@@ -318,6 +329,42 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
 </main>
 </div>
 
+<div id="helpShade" hidden><div id="helpBox" role="dialog" aria-label="Mode d'emploi">
+  <div class="hd"><img src="logo.svg" alt="" width="28" height="28" onerror="this.remove()"><b>Ombre portée — mode d'emploi</b><span id="helpVer" class="hint"></span><button id="helpClose" style="margin-left:auto">Fermer</button></div>
+  <div class="bd">
+    <h3>1. Charger un site</h3>
+    <p>Dans <b>Site à partir d'une adresse</b> (panneau de gauche, bouton ☰ sur smartphone) : tapez une adresse ou touchez <b>📍</b> pour votre position, choisissez la taille de la <b>Zone</b>, puis <b>Charger le site</b>. L'IGN fournit la photo aérienne ou le plan, le cadastre, les bâtiments avec leur hauteur, le relief et les arbres (LiDAR). Cochez <b>Relief lointain</b> pour voir le paysage jusqu'à l'horizon et le soleil se cacher derrière les montagnes.</p>
+    <p>On peut aussi <b>Ouvrir…</b> une image ou un PDF de plan cadastral (immeuble en rectangle vert, échelle en segment rouge), ou un projet enregistré.</p>
+    <h3>2. Placer l'immeuble projeté</h3>
+    <p><b>+ Immeuble</b> (bloc Immeuble) pose un immeuble de 20 × 12 m au centre de la vue ; ou clic droit / appui long sur le plan → <b>Ajouter un immeuble ici</b>, ou <b>Dessiner un immeuble</b>. Glissez-le pour le déplacer, ses poignées carrées pour le redimensionner, la ronde pour le pivoter. Hauteur, dimensions, couleurs, façade et forme du toit : bloc Immeuble ou clic droit sur l'immeuble.</p>
+    <h3>3. Choisir le jour et l'heure</h3>
+    <p>Les trois cadrans : la <b>boussole</b> (tourne la vue), le <b>cadran solaire</b> (l'ombre du style suit le doigt ou la souris : heure) et le <b>calendrier</b> (jour de l'année). Molette sur un cadran ou sur la date et l'heure du panneau pour avancer pas à pas. <b>Animer</b> fait défiler la journée, <b>Maintenant</b> revient à l'instant présent. Heure locale ou TU : bloc Date et heure.</p>
+    <h3>4. Se déplacer</h3>
+    <table>
+      <tr><td>Souris</td><td>glisser le fond = déplacer · molette = zoom · Maj + glisser ou clic droit + glisser = passer en 3D, pivoter, incliner · clic droit = menu</td></tr>
+      <tr><td>Écran tactile</td><td>un doigt = déplacer · pincer = zoom · tourner à deux doigts = rotation · deux doigts vers le haut = 3D et inclinaison (revenir à plat = 2D) · appui long = menu</td></tr>
+      <tr><td>Clavier</td><td>←/→ ±15 min · ↑/↓ ±1 jour · PgPréc/PgSuiv ±1 mois · +/− hauteur · Espace = animer · Échap = annuler</td></tr>
+    </table>
+    <h3>5. Analyser</h3>
+    <p><b>Trajectoire</b> : cliquez un coin ou un point du toit, la courbe de son ombre sur la journée est tracée heure par heure. <b>Scénario</b> : plusieurs instants (solstices, équinoxes, heures de la journée…) affichés ensemble, chacun avec sa couleur et sa légende. <b>Règle</b> (clic droit sur le fond) : mesurer une distance. Clic droit sur une construction voisine : corriger sa hauteur.</p>
+    <h3>6. Enregistrer, imprimer</h3>
+    <p><b>Enregistrer le projet</b> garde tout (plan, données IGN, immeubles, réglages) dans un fichier qui se rouvre hors ligne. <b>Enregistrer le plan modifié</b>, <b>Exporter la vue</b> (image) et <b>Imprimer</b> (avec un récapitulatif).</p>
+    <h3>Le signe ⚠</h3>
+    <p>Une donnée n'est pas encore arrivée de l'IGN (serveur lent ou en panne passagère). Le logiciel réessaie seul ; cliquer sur le ⚠ réessaie aussitôt. Si la carte graphique sature, la 3D repart d'elle-même en qualité allégée.</p>
+    <h3>Version et licence</h3>
+    <p id="helpVer2"></p>
+    <pre>MIT License
+
+Copyright (c) 2026 Cyrille31
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</pre>
+    <p class="hint">Données : © IGN (Géoplateforme) — photographies aériennes, Plan IGN, cadastre (Parcellaire Express), BD TOPO, LiDAR HD, RGE ALTI ; SRTM (NASA) hors de France. Position du soleil : algorithme de la NOAA.</p>
+  </div>
+</div></div>
 <div id="printArea">
   <h1 id="printTitle">Étude d'ombre portée</h1>
   <div id="printInfo"></div>
@@ -1505,12 +1552,15 @@ function syncUI() {
     l.title = S.veg ? 'Arbres (LiDAR HD)' : S.vegMiss ? 'Arbres : en attente des données de l\'IGN' : S.site ? 'Pas d\'arbres : LiDAR HD indisponible ici' : 'Arbres : chargez un site à partir d\'une adresse'; }
   { // couche cochée mais non reçue de l'IGN : avertissement (clic = nouvel essai)
     const wait = '⚠ non reçue de l\'IGN : nouvel essai' + (layerRetry ? ' en cours…' : ' (cliquer)');
-    const lw = { cbPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cCad: S.layers && S.showCad && !S.layers.cad,
+    const bgMiss = S.layers && !S.layers[S.bgMode === 'plan' ? 'plan' : 'ortho'];
+    const lw = { cbPhoto: bgMiss, cPhoto: bgMiss, cCad: S.layers && S.showCad && !S.layers.cad, cFar: !!farMissing(),
       cbTrees: S.vegMiss, cShowTrees: S.vegMiss };
     for (const [id, bad] of Object.entries(lw)) {
       const el = $(id); if (!el) continue; const lab = el.parentElement; let w = lab.querySelector('.miss');
-      if (!w) { w = document.createElement('span'); w.className = 'miss warn'; w.textContent = ' ⚠'; lab.appendChild(w); w.onclick = e => { e.preventDefault(); e.stopPropagation(); if (/Trees/.test(id)) retryVeg(true); else retryLayers(true); changed(); }; }
-      w.hidden = !bad; w.title = /Trees/.test(id) ? 'Arbres : modèle de surface LiDAR non reçu de l\'IGN ; nouvel essai' + (vegRetry ? ' en cours…' : ' (cliquer)') : wait;
+      if (!w) { w = document.createElement('span'); w.className = 'miss warn'; w.textContent = ' ⚠'; lab.appendChild(w); w.onclick = e => { e.preventDefault(); e.stopPropagation(); if (/Trees/.test(id)) retryVeg(true); else if (id === 'cFar') farWakeAll(); else retryLayers(true); changed(); }; }
+      w.hidden = !bad; w.title = /Trees/.test(id) ? 'Arbres : modèle de surface LiDAR non reçu de l\'IGN ; nouvel essai' + (vegRetry ? ' en cours…' : ' (cliquer)')
+        : id === 'cFar' ? 'Relief lointain : ' + farMissing() + ' image(s) non reçue(s) de l\'IGN, remplacée(s) par une image moins fine ; nouvel essai (cliquer)'
+        : /Photo/.test(id) ? (S.bgMode === 'plan' ? 'Plan IGN' : 'Photo aérienne') + ' non reçu(e) de l\'IGN : nouvel essai' + (layerRetry ? ' en cours…' : ' (cliquer)') : wait;
     }
   }
   $('cPhoto').checked = S.bgMode === 'ortho'; $('cCad').checked = S.showCad;
@@ -2080,7 +2130,7 @@ async function fetchLayers(bb, pw, ph, noCad) {
 function composeLayers(L) {
   const any = L.plan || L.ortho || L.cad || L.blank, c = document.createElement('canvas'); c.width = any.width; c.height = any.height;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
-  const base = S.bgMode === 'ortho' ? (L.ortho || L.plan) : S.bgMode === 'plan' ? (L.plan || L.ortho) : null;
+  const base = S.bgMode === 'ortho' ? L.ortho : S.bgMode === 'plan' ? L.plan : null;   // couche absente : fond blanc et ⚠ (nouvel essai en cours)
   if (base) x.drawImage(base, 0, 0);
   if (S.showCad && L.cad) x.drawImage(L.cad, 0, 0);
   if (L.names && S.bgMode !== 'plan') x.drawImage(L.names, 0, 0);   // noms des villes (le plan IGN les porte déjà)
@@ -2425,8 +2475,17 @@ function locateMe(auto) {
   { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 });
 }
 $('btnLocate').onclick = () => locateMe(false);
+/* ------------------------------------------------------------ Mode d'emploi, version, licence */
+const APP_VERSION = '1.0', APP_DATE = 'octobre 2026';
+$('helpVer').textContent = 'version ' + APP_VERSION;
+$('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). Logiciel libre sous licence MIT : utilisation, copie, modification et diffusion libres, sans garantie. Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
+const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
+$('btnHelp').onclick = () => showHelp(true);
+$('helpClose').onclick = () => showHelp(false);
+$('helpShade').addEventListener('click', e => { if (e.target.id === 'helpShade') showHelp(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('helpShade').hidden) { showHelp(false); e.stopPropagation(); } }, true);
 // réseau rétabli ou onglet de nouveau affiché : les couches manquantes sont redemandées aussitôt
-const retryNow = () => { if (document.hidden) return; retryLayers(true); retryVeg(true); };
+const retryNow = () => { if (document.hidden) return; retryLayers(true); retryVeg(true); farWakeAll(); };
 window.addEventListener('online', retryNow); document.addEventListener('visibilitychange', retryNow);
 $('cFar').onchange = e => { S.farOn = e.target.checked; actLog('Relief lointain : ' + S.farOn); if (S.farOn) { if (!S.site) status('Relief lointain : chargez d\'abord un site à partir d\'une adresse.', true); else ensureFar(); } G.farKey = null; changed(); };
 
@@ -2522,6 +2581,9 @@ function ensureFar() {
   })();
   return farJob;
 }
+/** Nombre d'images du relief lointain (fond en cours) non reçues ; réveil des nouveaux essais. */
+const farMissing = () => S.farOn && S.far && S.far.miss ? S.far.miss[farMode()] || 0 : 0;
+const farWakeAll = () => { const w = S.far && S.far.wake; if (w) for (const k in w) if (w[k]) w[k](); };
 /** Fond du relief lointain : photo (avec les villes) ou plan IGN, comme la case « Photo ». */
 const farMode = () => S.bgMode === 'plan' ? 'plan' : 'ortho';
 /** Images d'un fond pour les trois niveaux ; l'anneau proche en 2 × 2 tuiles (meilleure définition). */
@@ -2531,14 +2593,14 @@ async function farTextures(far, mode) {
   far.loading = far.loading || {};
   return far.loading[mode] = (async () => {
     const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(isMobile() || G.lowGPU ? 2048 : 4096, G.maxTex || 2048);
-    const get = (bb, w, what) => fetchImageTiled(layer, bb, w, w, fmt, false, what).catch(e => { console.warn(e); return null; });
+    const get = (bb, w, what, T) => fetchImageTiled(layer, bb, w, w, fmt, false, what, T).catch(e => { console.warn(e); return null; });
     const canvasOf = (w, fill) => { const c = document.createElement('canvas'); c.width = c.height = w; const x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, w, w); return c; };
     const fill = mode === 'plan' ? '#f2efe9' : '#8a9a78', names = (c, k) => { if (mode === 'ortho' && far.cities[k] && far.cities[k].length) c.getContext('2d').drawImage(namesLayer(far.cities[k], far.bb[k], c.width, c.height), 0, 0); return c; };
     const bN = far.bb.N, nt = TN > TS ? 2 : 1, tw = TN / nt, hw = (bN[2] - bN[0]) / nt;
     // morceaux : [canevas, rectangle Lambert-93, taille (px), position x, y dans le canevas]
     const parts = [['C', far.bb.C, TS, 0, 0], ['F', far.bb.F, TS, 0, 0]];
     for (let b = 0; b < nt; b++) for (let a = 0; a < nt; a++) parts.push(['N', [bN[0] + a * hw, bN[3] - (b + 1) * hw, bN[0] + (a + 1) * hw, bN[3] - b * hw], tw, a * tw, b * tw]);
-    const img = [], fetchMissing = () => Promise.all(parts.map((q, i) => img[i] ? null : get(q[1], q[2], q[0] === 'N' ? 'Relief proche : image' : 'Relief lointain : image').then(im => { if (im) img[i] = im; })));
+    const img = [], fetchMissing = T => Promise.all(parts.map((q, i) => img[i] ? null : get(q[1], q[2], q[0] === 'N' ? 'Relief proche : image' : 'Relief lointain : image', T).then(im => { if (im) img[i] = im; })));
     let ver = 0;
     const build = () => {
       const cv = { C: canvasOf(TS, fill), F: canvasOf(TS, fill), N: canvasOf(TN, fill) };
@@ -2550,15 +2612,21 @@ async function farTextures(far, mode) {
       parts.forEach(([k, , w, x, y], i) => { if (img[i]) cv[k].getContext('2d').drawImage(img[i], x, y, w, w); });
       return { C: names(cv.C, 'C'), F: names(cv.F, 'F'), N: names(cv.N, 'N'), sN: TN, id: far.ver + mode + '#' + ver++ };
     };
+    if (S.far === far) { far.tex[mode] = build(); S.dirty = true; }   // changement de fond : relief aussitôt, images à mesure
     await fetchMissing();
-    far.tex[mode] = build();
-    if (img.filter(Boolean).length < parts.length) (async () => {   // images non reçues de l'IGN : nouveaux essais en arrière-plan
-      for (const wait of [4000, 20000, 60000, 180000]) {
-        await new Promise(r => setTimeout(r, wait));
-        if (S.far !== far) return;
-        const n0 = img.filter(Boolean).length; await fetchMissing();
-        if (img.filter(Boolean).length > n0) { far.tex[mode] = build(); S.dirty = true; status('Relief lointain : images complétées.', true); }
-        if (img.filter(Boolean).length === parts.length) return;
+    far.tex[mode] = build(); S.dirty = true;
+    far.miss = far.miss || {}; far.wake = far.wake || {};
+    far.miss[mode] = parts.length - img.filter(Boolean).length;
+    if (far.miss[mode]) (async () => {   // images non reçues de l'IGN : nouveaux essais sans fin (toutes les 3 min ensuite), en tuiles plus petites
+      for (let k = 0; ; k++) {
+        await new Promise(r => { far.wake[mode] = r; setTimeout(r, [4000, 20000, 60000][k] || 180000); });
+        far.wake[mode] = null;
+        if (S.far && S.far !== far) return;   // autre adresse : abandon
+        const n0 = img.filter(Boolean).length; await fetchMissing(750);
+        far.miss[mode] = parts.length - img.filter(Boolean).length;
+        if (img.filter(Boolean).length > n0) { far.tex[mode] = build(); S.dirty = true; status('Relief lointain : images ' + (far.miss[mode] ? 'en partie ' : '') + 'complétées.', true); }
+        changed();
+        if (!far.miss[mode]) return;
       }
     })();
     return far.tex[mode];
@@ -2595,7 +2663,7 @@ function farMesh(T, o) {
 function buildFar() {
   const F = S.far, st = S.site, on = !!(S.farOn && F && st && Math.hypot(F.ax - st.ax, F.ay - st.ay) < 2000), gl = G.gl;
   if (on && !F.tex[farMode()]) farTextures(F, farMode()).then(() => { S.dirty = true; });   // autre fond (case « Photo ») : téléchargé à la demande
-  const tx = on ? F.tex[farMode()] || F.tex.ortho || F.tex.plan : null;
+  const tx = on ? F.tex[farMode()] : null;
   const key = on ? [F.ver, st.x0, st.y1, st.Lx, st.Ly, pxPerM(), S.terrain ? S.terrain.z0 : 0].join('|') : '';
   if (key !== G.farKey) {
     G.farKey = key;
@@ -4197,7 +4265,7 @@ function draw3d() {
     gl.uniformMatrix4fv(m.u.uLVP, false, LVPF); gl.uniform1f(m.u.uNOff, (fx1 - fx0) / G.smF * 1.5); gl.uniform1f(m.u.uTexel, 1 / G.smF);
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTexF);
     gl.uniform1f(m.u.uTreeOpa, 0); gl.uniform1f(m.u.uRelief, 1); gl.uniform1f(m.u.uFar, 1); gl.uniform3fv(m.u.uSun, LR); gl.uniform1f(m.u.uSunUp, upR ? 1 : 0); gl.uniform3fv(m.u.uEye, ci.eye); gl.uniform1f(m.u.uFog, 300000 * ppm); gl.uniform4f(m.u.uHole, 0.5, 0.5, W - 0.5, H - 0.5);
-    const txs = F.tex[farMode()] || F.tex.ortho || F.tex.plan, sm = txs ? farSeams(F, txs) : null;
+    const txs = F.tex[farMode()], sm = txs ? farSeams(F, txs) : null;
     for (const [buf, T, tx, bb, lv] of [['farN', F.F, G.farTexN, F.bb.N, 'N'], ['farF', F.F, G.farTexF, F.bb.F, 'F'], ['farC', F.C, G.farTexC, F.bb.C, F.F ? 'C' : null]]) {
       if (!T) continue;
       gl.uniform2f(m.u.uPlanOrig, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm); gl.uniform2f(m.u.uPlanSize, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm);
