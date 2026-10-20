@@ -74,6 +74,11 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #status{padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status.msg{color:var(--text)}
 #printArea{display:none}
+#netBusy{display:inline-flex;align-items:center;flex:none}
+#netBusy[hidden]{display:none}
+#netBusy .hh{transform-origin:12px 12px;animation:clockspin 1s linear infinite}
+#netBusy .hm{transform-origin:12px 12px;animation:clockspin 12s linear infinite}
+@keyframes clockspin{to{transform:rotate(360deg)}}
 #helpShade{position:fixed;inset:0;z-index:50;background:rgba(15,20,35,.45);display:flex;align-items:center;justify-content:center;padding:12px}
 #helpBox{background:#fff;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.35);max-width:760px;width:100%;max-height:calc(100dvh - 24px);display:flex;flex-direction:column}
 #helpBox .hd{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
@@ -292,6 +297,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
   <div id="toolbar">
     <button id="btnMenu" class="mob" title="Afficher les réglages">☰</button>
     <button id="btnHelp" title="Mode d'emploi, version et licence">❓<span class="nomob"> Mode d'emploi</span></button>
+    <span id="netBusy" hidden><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#fff" stroke="#2563eb" stroke-width="2"/><line class="hm" x1="12" y1="12" x2="12" y2="7" stroke="#1d2330" stroke-width="2.2" stroke-linecap="round"/><line class="hh" x1="12" y1="12" x2="12" y2="4.5" stroke="#2563eb" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="12" r="1.4" fill="#1d2330"/></svg></span>
     <button id="btnOpen" title="Image (PNG, JPG…), PDF ou projet .ombre.json">📂 Ouvrir…</button>
     <button id="btnDemo" hidden>Plan de démonstration</button>
     <span class="sep"></span>
@@ -940,6 +946,12 @@ function render(ctx, W, H, v, opt = {}) {
   const shadowsPath = (s, L = BL) => { ctx.beginPath(); let any = false; for (const bb of L) { const sp = shadowPolyB(bb, s); if (!sp) continue; any = true; sp.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath(); } return any; };
   ctx.save(); { const c = Math.cos(v.rot || 0), sn = Math.sin(v.rot || 0); ctx.setTransform(k * v.s * c, k * v.s * sn, -k * v.s * sn, k * v.s * c, k * v.ox, k * v.oy); }
   ctx.imageSmoothingEnabled = v.s < 3;
+  if (S.farOn && S.far && S.site && Math.hypot(S.far.ax - S.site.ax, S.far.ay - S.site.ay) < 2000 && S.far.tex[farMode()]) {   // relief lointain : ses images autour du plan (vue de dessus)
+    const T = S.far.tex[farMode()], st = S.site;
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.filter = bgFilter();
+    for (const kk of ['C', 'F', 'N']) { const bb = S.far.bb[kk], c = T[kk]; if (bb && c) ctx.drawImage(c, (bb[0] - st.x0) * ppm, (st.y1 - bb[3]) * ppm, (bb[2] - bb[0]) * ppm, (bb[3] - bb[1]) * ppm); }
+    ctx.restore();
+  }
   ctx.filter = bgFilter(); ctx.drawImage(S.clean, 0, 0); ctx.filter = 'none';
   if (NB && (S.nbRoof || NB.list.some(c => c.roofCol))) for (const c of NB.list) {   // toits des constructions voisines (couleur choisie)
     const rc = nbRoof(c); if (!rc) continue;
@@ -2052,7 +2064,14 @@ const SITE_BG = {
   cad: { base: null, cad: true }
 };
 const CAD_LAYER = 'CADASTRALPARCELS.PARCELLAIRE_EXPRESS';
+/** Téléchargements en cours : petite horloge animée dans la barre du haut. */
+let netBusy = 0;
+function netCount(d) { netBusy = Math.max(0, netBusy + d); const el = $('netBusy'); if (el) { el.hidden = !netBusy; el.title = 'Téléchargement en cours (' + netBusy + ')'; } }
 async function fetchRetry(url, opt, what, tries = 4) {
+  netCount(1);
+  try { return await fetchRetry0(url, opt, what, tries); } finally { netCount(-1); }
+}
+async function fetchRetry0(url, opt, what, tries) {
   let err;
   for (let k = 0; k < tries; k++) {
     try {
@@ -2458,8 +2477,10 @@ $('btnSite').onclick = loadSite;
 /** Adresse de la position de l'appareil (GPS), écrite dans le champ Adresse. auto : au lancement, sans message d'erreur. */
 function locateMe(auto) {
   if (!navigator.geolocation) { if (!auto) alert('Position indisponible sur cet appareil.'); return; }
-  status('Recherche de votre position…', true);
+  status('Recherche de votre position…', true); netCount(1);
+  let once = true; const done = () => { if (once) { once = false; netCount(-1); } };
   navigator.geolocation.getCurrentPosition(async pos => {
+    done();
     const lat = pos.coords.latitude, lon = pos.coords.longitude;
     try {
       const r = await fetchRetry(GEOPF + '/geocodage/reverse?limit=1&lon=' + lon.toFixed(6) + '&lat=' + lat.toFixed(6), null, 'Adresse de votre position', 2), j = await r.json(), f = j.features && j.features[0];
@@ -2467,11 +2488,12 @@ function locateMe(auto) {
       // centre de la zone : la position elle-même (Lambert-93 déduit de l'écart entre l'adresse et la position)
       const a = l93ToWgs(f.properties.x, f.properties.y), k = 111320, x = f.properties.x + (lon - a.lon) * k * Math.cos(lat * D2R), y = f.properties.y + (lat - a.lat) * k;
       S.geoHit = { label: f.properties.label, lon, lat, x, y };
-      if (auto && $('addr').value.trim()) return;   // l'utilisateur a déjà tapé une adresse
+      if (auto && ($('addr').value.trim() || S.clean)) return;   // l'utilisateur a déjà tapé une adresse ou ouvert un plan
       $('addr').value = f.properties.label; $('addrFound').textContent = '';
-      status('Votre position : ' + f.properties.label + (pos.coords.accuracy ? ' (± ' + Math.round(pos.coords.accuracy) + ' m)' : '') + '. Touchez « Charger le site ».', true);
+      status('Votre position : ' + f.properties.label + (pos.coords.accuracy ? ' (± ' + Math.round(pos.coords.accuracy) + ' m)' : '') + (auto ? '. Chargement de la zone…' : '. Touchez « Charger le site ».'), true);
+      if (auto) loadSite();   // au lancement : zone de la position chargée sans attendre
     } catch (e) { console.warn(e); status('Adresse de votre position introuvable : ' + e.message, true); }
-  }, e => { console.warn(e); status(auto ? '' : 'Position refusée ou indisponible (' + e.message + ').', !auto); if (!auto) alert('Position indisponible : ' + e.message); },
+  }, e => { done(); console.warn(e); status(auto ? '' : 'Position refusée ou indisponible (' + e.message + ').', !auto); if (!auto) alert('Position indisponible : ' + e.message); },
   { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 });
 }
 $('btnLocate').onclick = () => locateMe(false);
