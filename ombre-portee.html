@@ -677,7 +677,7 @@ function setImage(canvas, dataURL, name, keep, site) {
   S.clean = cloneCanvas(canvas);
   S.origRect = null; S.origStyle = null;
   if (site) return setSiteImage(canvas, site, keep);
-  S.site = null; S.terrain = null; S.veg = null; S.layers = null; S.ruler = null;
+  S.site = null; S.terrain = null; S.veg = null; S.vegMiss = false; S.layers = null; S.ruler = null;
   const an = analyzeImage(canvas);
   if (an.blue) { inpaint(S.clean, an.blue.idx); S.origRect = longSide(an.blue.rect); S.origStyle = an.blue.style; }
   NB = detectNeighbors(canvas);
@@ -1344,7 +1344,7 @@ $('btnUTC').onclick = () => setUtcMode(true);
 function stopPlay() { if (S.playing) togglePlay(); }
 $('cbProj').onchange = e => { S.showProj = e.target.checked; if (!S.showProj) S.editB = false; changed(); };
 $('cbShadow').onchange = e => { S.showProjShadow = e.target.checked; changed(); };
-$('cbPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) composeSite(); changed(); };
+$('cbPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) { composeSite(); if (!S.layers[S.bgMode]) retryLayers(true); } changed(); };
 $('cbTrees').onchange = e => { S.showTrees = e.target.checked; changed(); };
 $('btnNow').onclick = () => {
   stopPlay();
@@ -1382,7 +1382,7 @@ $('colWall').oninput = e => { if (S.building) { S.building.wallCol = e.target.va
 // curseurs : molette
 for (const [id, k, st, lo, hi] of [['rOpa', 'opacity', 0.05, 0.1, 0.9], ['rBright', 'bright', 5, -60, 150], ['rContrast', 'contrast', 5, 40, 200], ['rTreeT', 'treeT', 5, 0, 90]])
   attachScrub($(id), n => { S[k] = clamp(Math.round((S[k] + n * st) / st) * st, lo, hi); changed(); });
-$('cPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) composeSite(); changed(); };
+$('cPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) { composeSite(); if (!S.layers[S.bgMode]) retryLayers(true); } changed(); };
 $('cCad').onchange = e => { S.showCad = e.target.checked; if (S.layers) composeSite(); changed(); };
 
 // immeuble, échelle, modes
@@ -1492,7 +1492,17 @@ function syncUI() {
   if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
   $('siteDims').textContent = S.site && S.site.Lx ? 'actuelle : ' + fmtNum(S.site.Lx, 0) + ' × ' + fmtNum(S.site.Ly, 0) + ' m' : '';
   $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow; $('cbPhoto').checked = S.bgMode === 'ortho'; $('cbTrees').checked = S.showTrees;
-  $('cbPhoto').parentElement.hidden = !S.layers; $('cbTrees').parentElement.hidden = !S.veg;
+  $('cbPhoto').parentElement.hidden = !S.layers; $('cbTrees').parentElement.hidden = !S.veg && !S.vegMiss;
+  { // couche cochée mais non reçue de l'IGN : avertissement (clic = nouvel essai)
+    const wait = '⚠ non reçue de l\'IGN : nouvel essai' + (layerRetry ? ' en cours…' : ' (cliquer)');
+    const lw = { cbPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cCad: S.layers && S.showCad && !S.layers.cad,
+      cbTrees: S.vegMiss, cShowTrees: S.vegMiss };
+    for (const [id, bad] of Object.entries(lw)) {
+      const el = $(id); if (!el) continue; const lab = el.parentElement; let w = lab.querySelector('.miss');
+      if (!w) { w = document.createElement('span'); w.className = 'miss warn'; w.textContent = ' ⚠'; lab.appendChild(w); w.onclick = e => { e.preventDefault(); e.stopPropagation(); if (/Trees/.test(id)) retryVeg(true); else retryLayers(true); changed(); }; }
+      w.hidden = !bad; w.title = /Trees/.test(id) ? 'Arbres : modèle de surface LiDAR non reçu de l\'IGN ; nouvel essai' + (vegRetry ? ' en cours…' : ' (cliquer)') : wait;
+    }
+  }
   $('cPhoto').checked = S.bgMode === 'ortho'; $('cCad').checked = S.showCad;
   { const n = NB ? NB.list.length : 0, nh = NB ? NB.list.filter(c => c.h !== undefined).length : 0;
     $('nbInfo').textContent = S.clean ? n + ' construction(s) détectée(s), ' + nh + ' avec une hauteur saisie.' : ''; }
@@ -1985,7 +1995,7 @@ async function fetchRetry(url, opt, what, tries = 4) {
       const r = await fetch(url, opt); if (r.ok && !/xml/.test(r.headers.get('content-type') || '')) return r;
       const txt = await r.text().catch(() => ''), m = txt.match(/<ServiceException[^>]*>([^<]+)/);
       err = new Error(what + ' : erreur ' + r.status + (m ? ' (' + m[1].trim() + ')' : ''));
-      if (r.status >= 400 && r.status < 500 && r.status !== 429) break;
+      if (r.status === 401 || r.status === 403 || r.status === 404) break;   // l'IGN renvoie parfois 400 « Layer … unknown » quand il est surchargé : on réessaie
     }
     catch (e) { err = new Error(what + ' : ' + (e.message || 'réseau indisponible')); }
     await new Promise(r => setTimeout(r, 600 * 2 ** k));
@@ -2003,17 +2013,56 @@ async function fetchImage(url, what) {
   const blob = await (await fetchRetry(url, null, what)).blob(), u = URL.createObjectURL(blob);
   try { return await loadImg(u); } finally { URL.revokeObjectURL(u); }
 }
+/** Image WMS de grande taille en tuiles de 1 500 px au plus : l'IGN répond bien plus vite et plus sûrement qu'à une image de 3 000 px. */
+let wmsBusy = 0; const wmsQueue = [];
+async function wmsSlot(f) {   // 6 requêtes à la fois au plus
+  if (wmsBusy >= 6) await new Promise(r => wmsQueue.push(r));
+  wmsBusy++; try { return await f(); } finally { wmsBusy--; const n = wmsQueue.shift(); if (n) n(); }
+}
+async function fetchImageTiled(layer, bb, pw, ph, fmt, transp, what) {
+  const T = 1500, nx = Math.ceil(pw / T), ny = Math.ceil(ph / T);
+  if (nx * ny === 1) return wmsSlot(() => fetchImage(wmsUrl(layer, bb, pw, ph, fmt, transp), what));
+  const c = document.createElement('canvas'); c.width = pw; c.height = ph; const x = c.getContext('2d'), sx = (bb[2] - bb[0]) / pw, sy = (bb[3] - bb[1]) / ph, jobs = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x0 = Math.round(i * pw / nx), x1 = Math.round((i + 1) * pw / nx), y0 = Math.round(j * ph / ny), y1 = Math.round((j + 1) * ph / ny);
+    const tb = [bb[0] + x0 * sx, bb[3] - y1 * sy, bb[0] + x1 * sx, bb[3] - y0 * sy];
+    jobs.push(wmsSlot(() => fetchImage(wmsUrl(layer, tb, x1 - x0, y1 - y0, fmt, transp), what)).then(im => x.drawImage(im, x0, y0, x1 - x0, y1 - y0)));
+  }
+  await Promise.all(jobs);
+  return c;
+}
+const LAYER_DEF = { plan: () => [SITE_BG.plan.base, 'image/png', false, 'Plan IGN'], ortho: () => [SITE_BG.ortho.base, 'image/jpeg', false, 'Photo aérienne'], cad: () => [CAD_LAYER, 'image/png', true, 'Cadastre'] };
+/** Couches du site absentes (téléchargement raté) : nouvel essai en arrière-plan, puis le fond se recompose. */
+let layerRetry = null;
+function retryLayers(now) {
+  const st = S.site; if (!st || !S.layers || layerRetry) return;
+  const miss = ['plan', 'ortho', 'cad'].filter(k => !S.layers[k]); if (!miss.length) return;
+  const any = S.layers.plan || S.layers.ortho || S.layers.cad || S.layers.blank, bb = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1], site = st;
+  S.layerTry = (S.layerTry || 0) + 1;
+  layerRetry = (async () => {
+    if (!now) await new Promise(r => setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.layerTry - 1, 3)]));
+    if (S.site !== site) return;
+    const got = [];
+    await Promise.all(miss.map(k => { const [l, f, t, w] = LAYER_DEF[k](); return fetchImageTiled(l, bb, any.width, any.height, f, t, w).then(im => {
+      if (S.site !== site) return; const c = document.createElement('canvas'); c.width = any.width; c.height = any.height; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); S.layers[k] = c; got.push(LAYER_DEF[k]()[3]);
+    }).catch(e => console.warn(e)); }));
+    if (got.length && S.site === site) { composeSite(); status('Couche reçue de l\'IGN : ' + got.join(', ') + '.', true); }
+  })().finally(() => { layerRetry = null; changed(); if (S.site === site && S.layerTry < 4) retryLayers(); });
+}
 /** Les trois couches (plan IGN, photo, cadastre) sont téléchargées une fois ; le fond affiché se recompose aussitôt. */
 async function fetchLayers(bb, pw, ph, noCad) {
-  const get = (layer, fmt, transp, what) => fetchImage(wmsUrl(layer, bb, pw, ph, fmt, transp), what).catch(e => { console.warn(e); return e; });
+  const get = (layer, fmt, transp, what) => fetchImageTiled(layer, bb, pw, ph, fmt, transp, what).catch(e => { console.warn(e); return e; });
   const [plan, ortho, cad] = await Promise.all([get(SITE_BG.plan.base, 'image/png', false, 'Plan IGN'), get(SITE_BG.ortho.base, 'image/jpeg', false, 'Photo aérienne'), noCad ? new Error('sans cadastre') : get(CAD_LAYER, 'image/png', true, 'Cadastre')]);
   const L = {}, errs = [];
   for (const [k, v] of [['plan', plan], ['ortho', ortho], ['cad', cad]]) { if (v instanceof Error) { if (!(noCad && k === 'cad')) errs.push(v.message); } else { const c = document.createElement('canvas'); c.width = pw; c.height = ph; c.getContext('2d').drawImage(v, 0, 0, pw, ph); L[k] = c; } }
-  if (!L.plan && !L.ortho && !L.cad) throw new Error(errs.join(' ; '));
+  if (!L.plan && !L.ortho && !L.cad) {   // IGN en panne : fond blanc provisoire, les couches arriveront au nouvel essai
+    if (noCad) throw new Error(errs.join(' ; '));
+    L.blank = document.createElement('canvas'); L.blank.width = pw; L.blank.height = ph;
+  }
   return { L, errs };
 }
 function composeLayers(L) {
-  const any = L.plan || L.ortho || L.cad, c = document.createElement('canvas'); c.width = any.width; c.height = any.height;
+  const any = L.plan || L.ortho || L.cad || L.blank, c = document.createElement('canvas'); c.width = any.width; c.height = any.height;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   const base = S.bgMode === 'ortho' ? (L.ortho || L.plan) : S.bgMode === 'plan' ? (L.plan || L.ortho) : null;
   if (base) x.drawImage(base, 0, 0);
@@ -2306,11 +2355,29 @@ async function loadSiteRect(g, bb, keepView) {
     const lidar = mns && S.terrain && /LiDAR/.test(S.terrain.src);
     const nRoof = lidar ? computeRoofs(mns, S.terrain) : 0; G.nbKey = '';
     S.veg = lidar ? vegFromMNS(mns, S.terrain) : null; G.vegKey = '';
+    S.vegMiss = !mns && S.terrain && /LiDAR/.test(S.terrain.src); S.layerTry = 0; S.vegTry = 0;   // arbres : modèle de surface non reçu
+    if (lay.errs.length) retryLayers(); if (S.vegMiss) retryVeg();
     const nh = NB.list.filter(c => c.h !== undefined).length;
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
-      (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche manquante : ' + lay.errs.join(' ; ') : '') +
+      (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : S.vegMiss ? ', arbres non reçus de l\'IGN (nouvel essai en cours)' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche non reçue (nouvel essai en cours) : ' + lay.errs.join(' ; ') : '') +
       '. Placez votre immeuble et ajustez sa taille.', true);
+    changed();
   }
+}
+/** Modèle de surface LiDAR (arbres, formes des toits) non reçu : nouvel essai en arrière-plan. */
+let vegRetry = null;
+function retryVeg(now) {
+  const st = S.site, T = S.terrain; if (!st || !T || !S.vegMiss || vegRetry) return;
+  S.vegTry = (S.vegTry || 0) + 1;
+  vegRetry = (async () => {
+    if (!now) await new Promise(r => setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.vegTry - 1, 3)]));
+    if (S.site !== st) return;
+    const mns = await fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1], T.nx, T.ny, 'Végétation').catch(e => { console.warn(e); return null; });
+    if (!mns || S.site !== st) return;
+    const nRoof = computeRoofs(mns, S.terrain); G.nbKey = '';
+    S.veg = vegFromMNS(mns, S.terrain); G.vegKey = ''; S.vegMiss = false;
+    status('Arbres reçus de l\'IGN : ' + S.veg.trees.length + ' arbre(s)' + (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + '.', true);
+  })().finally(() => { vegRetry = null; changed(); if (S.vegMiss && S.site === st && S.vegTry < 4) retryVeg(); });
 }
 $('btnSite').onclick = loadSite;
 $('cFar').onchange = e => { S.farOn = e.target.checked; actLog('Relief lointain : ' + S.farOn); if (S.farOn) { if (!S.site) status('Relief lointain : chargez d\'abord un site à partir d\'une adresse.', true); else ensureFar(); } G.farKey = null; changed(); };
@@ -2616,6 +2683,7 @@ function siteFromSave(st) {
   S.site = { label: st.label, Lx: L, Ly, bg: st.bg, x0: st.x0, y1: st.y1, ax: st.ax, ay: st.ay, lon: st.lon, lat: st.lat, z0: st.z0, terrSrc: st.terrSrc };
   S.terrain = st.terrain ? { nx: st.terrain.nx || st.terrain.n, ny: st.terrain.ny || st.terrain.n, cell: st.terrain.cell, z0: st.terrain.z0, src: st.terrain.src, z: b64ToF32(st.terrain.z) } : null;
   S.veg = st.veg ? { nx: st.veg.nx || st.veg.n, ny: st.veg.ny || st.veg.n, cell: st.veg.cell, area: st.veg.area, max: st.veg.max, hedgeArea: st.veg.hedgeArea || 0, trees: st.veg.trees || [], h: b64ToF32(st.veg.h) } : null; G.vegKey = '';
+  S.vegMiss = false; S.layerTry = 0; setTimeout(() => retryLayers(), 0);   // projet enregistré avec une couche manquante : nouvel essai
   const roofIn = R => { if (!R) return undefined; const s = atob(R.v), v = new Float32Array(s.length); for (let i = 0; i < s.length; i++) v[i] = s.charCodeAt(i) / 255; return { ...R, v }; };
   return { L, blds: st.blds.map(b => ({ ...b, roof: roofIn(b.roof), rings: b.rings.map(r => r.map(([x, y]) => ({ x, y }))) })) };
 }

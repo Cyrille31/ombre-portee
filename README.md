@@ -37,6 +37,8 @@ Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la 
 
 La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (murs blancs et toit de tuiles par défaut, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
+Le serveur de l'IGN est parfois lent ou en panne passagère, surtout pour les grandes images. Les couches sont donc téléchargées en morceaux. Une couche non reçue (photo, plan, cadastre, ou arbres) est signalée par un **⚠** à côté de sa case, et le logiciel réessaie seul (après 4 s, 20 s, 1 min puis 3 min). Un clic sur le ⚠ réessaie aussitôt. Si aucune image n'arrive, le site s'ouvre quand même sur fond blanc, avec les bâtiments et le relief.
+
 Il faut une connexion Internet au moment du chargement. Une fois enregistré, le projet contient toutes les données et s'ouvre hors ligne.
 
 **Agrandir la zone** : des poignées bleues sont placées aux coins et au milieu des bords du plan (en 2D et en 3D). Glissez-en une : le nouveau rectangle s'affiche avec ses dimensions, puis il est rechargé (jusqu'à 1 000 m de côté). Les immeubles ajoutés, la vue et les réglages sont conservés. Les bâtiments sont découpés au bord du plan : seules les parties sur le plan sont gardées.
