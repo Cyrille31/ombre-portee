@@ -57,6 +57,8 @@ body.noaide .aide{display:none!important}
 #clockBox .row{flex-direction:column;align-items:stretch}
 #clockBox .row>*{width:100%}
 #clockBox label{font-size:12px;text-align:left;cursor:pointer}
+#clockBox .grp{border:1px solid #c9d1de;border-radius:7px;padding:2px 6px;display:flex;flex-direction:column;gap:1px;background:#f7f9fc}
+#clockBox label.off{opacity:.45}
 .info{background:#f7f8fa;border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-top:6px;font-size:12.5px}
 .info b{font-weight:600}
 .warn{color:var(--warn)}
@@ -110,6 +112,7 @@ body.mobile #cbDate{font-size:15px}
 body.mobile #cbTime{font-size:22px}
 body.mobile #clockBox .row{flex-basis:100%;flex-direction:row;flex-wrap:wrap;justify-content:center;margin:2px 0 0!important}
 body.mobile #clockBox .row>*{width:auto}
+body.mobile #clockBox .grp{flex-direction:row;gap:8px;align-items:center}
 body.mobile #clockBox button{min-height:30px}
 body.mobile #playSpeed{display:none}
 body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,calc(100vw - 16px))}
@@ -131,7 +134,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
 
   <section>
     <h2>Site à partir d'une adresse</h2>
-    <div class="row"><input type="text" id="addr" placeholder="Adresse (ex. 1 place du Capitole, Toulouse)" style="width:100%;text-align:left"></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="text" id="addr" placeholder="Adresse (ex. 1 place du Capitole, Toulouse)" style="flex:1;width:auto;min-width:0;text-align:left"><button id="btnLocate" title="Adresse de ma position (GPS de l'appareil)">📍</button></div>
     <div class="row">
       <span class="hint">Zone de</span>
       <select id="siteSize" title="Côté du carré centré sur l'adresse au chargement ; ensuite, agrandir avec les poignées du plan"><option value="100">100 m</option><option value="200" selected>200 m</option><option value="300">300 m</option><option value="500">500 m</option><option value="800">800 m</option></select>
@@ -179,6 +182,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <div class="row"><span class="hint" style="width:110px">Couleurs</span><label class="hint">toit <input type="color" id="colRoof"></label><label class="hint">murs <input type="color" id="colWall"></label></div>
     <div class="hint aide">Sur le plan : glisser l'immeuble pour le déplacer, les poignées carrées pour le redimensionner, la poignée ronde pour le pivoter (Maj = pas de 15°).</div>
     <div class="row">
+      <button id="btnNewB" title="Ajoute un immeuble de 20 × 12 m au centre de la vue, à ajuster ensuite">+ Immeuble</button>
       <button id="btnDraw" title="Tracer un nouvel immeuble sur le plan">Dessiner un immeuble</button>
       <button id="btnAddB" title="Ajoute une copie de l'immeuble sélectionné, à côté">+ Copie</button>
       <button id="btnDelB" class="small" title="Supprime l'immeuble sélectionné">Supprimer</button>
@@ -301,10 +305,12 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
         <option value="15">très lent</option><option value="30">lent</option><option value="60" selected>normal</option><option value="150">rapide</option><option value="400">très rapide</option>
         </select>
         <button id="btnNow">Maintenant</button>
-        <label title="Afficher les immeubles projetés"><input type="checkbox" id="cbProj" checked> Immeuble</label>
-        <label title="Ombre des immeubles projetés (décocher pour mieux voir les ombres d'un scénario)"><input type="checkbox" id="cbShadow" checked> Ombre</label>
+        <div class="grp" title="Afficher">
+          <label title="Afficher les immeubles projetés"><input type="checkbox" id="cbProj" checked> Immeuble</label>
+          <label title="Ombre des immeubles projetés (décocher pour mieux voir les ombres d'un scénario)"><input type="checkbox" id="cbShadow" checked> Ombre</label>
+          <label title="Arbres (site IGN avec LiDAR)"><input type="checkbox" id="cbTrees" checked> Arbres</label>
+        </div>
         <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cbPhoto" checked> Photo</label>
-        <label title="Arbres (site IGN)"><input type="checkbox" id="cbTrees" checked> Arbres</label>
     </div>
     </div>
   </div>
@@ -703,11 +709,7 @@ function setSiteImage(canvas, site, keep) {
   NB = nbFromBuildings(site.blds, W, H); S.hVer++;
   S.scale = { p1: { x: 0, y: 0 }, p2: { x: W, y: 0 }, meters: site.L, hidden: true };
   if (S.site) { S.site.Lx = S.site.Lx || site.L; S.site.Ly = S.site.Ly || site.L * H / W; }
-  if (!keep) {
-    const ppm = W / site.L;
-    S.building = { cx: W / 2, cy: H / 2, w: 20 * ppm, l: 12 * ppm, a: 0 };
-    S.traj = []; S.dz = 0;
-  }
+  if (!keep) { S.building = null; S.traj = []; }   // pas d'immeuble au départ : on l'ajoute à la main
   S.dirty = true; G.nbKey = ''; G.groundKey = ''; G.farKey = null;
   fitView(); if (S.view3d) fit3d(); changed();
   if (S.farOn) setTimeout(ensureFar, 0);   // relief lointain de la nouvelle adresse
@@ -1386,6 +1388,13 @@ $('cPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if
 $('cCad').onchange = e => { S.showCad = e.target.checked; if (S.layers) composeSite(); changed(); };
 
 // immeuble, échelle, modes
+/** Nouvel immeuble de 20 × 12 m centré sur le point (x, y) du plan, poignées affichées. */
+function addBuildingAt(x, y) {
+  if (!S.clean) return alert('Ouvrez d\'abord un plan ou chargez un site.');
+  const ppm = pxPerM(); addBuilding({ cx: x, cy: y, w: 20 * ppm, l: 12 * ppm, a: S.view3d ? 0 : -V.rot }); S.editB = true;
+  status('Immeuble ajouté (20 × 12 m) : glissez-le, ajustez ses poignées et sa hauteur.', true); changed();
+}
+$('btnNewB').onclick = () => { if (S.view3d) addBuildingAt(G.cam.tx, G.cam.tz); else { const c = toW({ x: CW / 2, y: CH / 2 }); addBuildingAt(c.x, c.y); } };
 $('btnAddB').onclick = () => {
   const b = S.building; if (!b) return $('btnDraw').onclick();
   const d = b.w * 1.3; addBuilding({ ...b, id: 0, cx: b.cx + Math.cos(b.a) * d, cy: b.cy + Math.sin(b.a) * d });
@@ -1492,7 +1501,9 @@ function syncUI() {
   if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
   $('siteDims').textContent = S.site && S.site.Lx ? 'actuelle : ' + fmtNum(S.site.Lx, 0) + ' × ' + fmtNum(S.site.Ly, 0) + ' m' : '';
   $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow; $('cbPhoto').checked = S.bgMode === 'ortho'; $('cbTrees').checked = S.showTrees;
-  $('cbPhoto').parentElement.hidden = !S.layers; $('cbTrees').parentElement.hidden = !S.veg && !S.vegMiss;
+  $('cbPhoto').parentElement.hidden = !S.layers;
+  { const ok = !!(S.veg || S.vegMiss), l = $('cbTrees').parentElement; $('cbTrees').disabled = !S.veg; l.classList.toggle('off', !ok);
+    l.title = S.veg ? 'Arbres (LiDAR HD)' : S.vegMiss ? 'Arbres : en attente des données de l\'IGN' : S.site ? 'Pas d\'arbres : LiDAR HD indisponible ici' : 'Arbres : chargez un site à partir d\'une adresse'; }
   { // couche cochée mais non reçue de l'IGN : avertissement (clic = nouvel essai)
     const wait = '⚠ non reçue de l\'IGN : nouvel essai' + (layerRetry ? ' en cours…' : ' (cliquer)');
     const lw = { cbPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cPhoto: S.layers && S.bgMode === 'ortho' && !S.layers.ortho, cCad: S.layers && S.showCad && !S.layers.cad,
@@ -1933,6 +1944,7 @@ function menuProj(b, part, cx, cy) {
 function menuBg(cx, cy, P, FP) {
   openMenu(cx, cy, 'Fond', m => {
     if (FP) { m.button('📍 Nouvelle zone de travail ici (' + $('siteSize').value + ' m)', () => { closePop(); newZoneAt(FP.X, FP.Y); }); m.hint('Remplace la zone de travail actuelle (même taille que « Zone de »), centrée sur ce point du relief lointain.'); m.sep(); }
+    if (P) m.button('🏢 Ajouter un immeuble ici (20 × 12 m)', () => { closePop(); addBuildingAt(P.x, P.y); });
     m.button('🏢 Dessiner un nouvel immeuble', () => { closePop(); if (S.view3d) exit3D(); setMode('draw'); status('Nouvel immeuble : glisser sur le plan pour tracer son rectangle.', true); });
     if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
     m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
@@ -2084,8 +2096,8 @@ async function fetchGrid(layer, bb, nx, ny, what) {
 const zOk = v => isFinite(v) && v > -500 && v < 9000;
 /** Relief : LiDAR HD (MNT), complété par le RGE ALTI là où le LiDAR manque. */
 async function fetchTerrain(bb, nx, ny, cell) {
-  let z = null, src = 'LiDAR HD';
-  try { z = await fetchGrid('IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nx, ny); } catch (e) { console.warn(e); }
+  let z = null, src = 'LiDAR HD', lidarErr = false;
+  try { z = await fetchGrid('IGNF_LIDAR-HD_MNT_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', bb, nx, ny); } catch (e) { console.warn(e); lidarErr = true; }
   let bad = z ? z.reduce((t, v) => t + !zOk(v), 0) : nx * ny;
   if (bad) {
     const z2 = await fetchGrid('ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES', bb, nx, ny);
@@ -2094,7 +2106,7 @@ async function fetchTerrain(bb, nx, ny, cell) {
   }
   if (bad > z.length * 0.5) return null;
   if (bad) { let last = 0; for (let i = 0; i < z.length; i++) if (zOk(z[i])) last = z[i]; else z[i] = last; }
-  return { nx, ny, cell, z, src };
+  return { nx, ny, cell, z, src, lidarErr };
 }
 async function fetchBuildings(bb) {
   const out = []; let start = 0;
@@ -2282,6 +2294,13 @@ const l93North = lon => 0.7256077650 * (3 - lon);
 async function loadSite() {
   const q = $('addr').value.trim(), L = clamp(parseNum($('siteSize').value) || 200, 30, 1000);
   if (!q) { $('addr').focus(); return; }
+  if (S.geoHit && S.geoHit.label === q) {   // position de l'appareil : zone centrée exactement sur elle
+    const g = S.geoHit, btn = $('btnSite'); btn.disabled = true;
+    try { $('addrFound').textContent = 'Ma position : ' + g.label; await loadSiteRect(g, [g.x - L / 2, g.y - L / 2, g.x + L / 2, g.y + L / 2]); }
+    catch (e) { console.error(e); status('Chargement du site impossible : ' + e.message, true); alert('Chargement du site impossible.\n' + e.message); }
+    finally { btn.disabled = false; }
+    return;
+  }
   const btn = $('btnSite'); btn.disabled = true;
   try {
     status('Recherche de l\'adresse…', true);
@@ -2352,15 +2371,15 @@ async function loadSiteRect(g, bb, keepView) {
       setView(vKeep.v.x * k + dx, vKeep.v.y * k + dy, vKeep.s / k, vKeep.rot);
       Object.assign(G.cam, vKeep.cam, { tx: vKeep.cam.tx * k + dx, tz: vKeep.cam.tz * k + dy, dist: vKeep.cam.dist * k });
     }
-    const lidar = mns && S.terrain && /LiDAR/.test(S.terrain.src);
+    const lidar = mns && S.terrain && mns.reduce((t, v) => t + zOk(v), 0) > mns.length * 0.5;   // modèle de surface LiDAR reçu
     const nRoof = lidar ? computeRoofs(mns, S.terrain) : 0; G.nbKey = '';
     S.veg = lidar ? vegFromMNS(mns, S.terrain) : null; G.vegKey = '';
-    S.vegMiss = !mns && S.terrain && /LiDAR/.test(S.terrain.src); S.layerTry = 0; S.vegTry = 0;   // arbres : modèle de surface non reçu
+    S.vegMiss = !mns && !!S.terrain && (/LiDAR/.test(S.terrain.src) || !!(terr && terr.lidarErr)); S.layerTry = 0; S.vegTry = 0;   // arbres : modèle de surface non reçu
     if (lay.errs.length) retryLayers(); if (S.vegMiss) retryVeg();
     const nh = NB.list.filter(c => c.h !== undefined).length;
     status(blds.length + ' bâtiment(s) BD TOPO (' + nh + ' avec hauteur), relief ' + (terr ? terr.src + ' (' + fmtNum(terr.cell, 2) + ' m)' : 'indisponible : sol plat') +
       (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + (S.veg ? ', ' + S.veg.trees.length + ' arbre(s) et ' + fmtNum(S.veg.hedgeArea, 0) + ' m² de haies' : S.vegMiss ? ', arbres non reçus de l\'IGN (nouvel essai en cours)' : ', arbres indisponibles (pas de LiDAR ici)') + (lay.errs.length ? ' — Couche non reçue (nouvel essai en cours) : ' + lay.errs.join(' ; ') : '') +
-      '. Placez votre immeuble et ajustez sa taille.', true);
+      (S.buildings.length ? '. Ajustez votre immeuble.' : '. Ajoutez votre immeuble : « + Immeuble » (panneau Immeuble) ou ' + (isMobile() ? 'appui long' : 'clic droit') + ' sur le plan → « Ajouter un immeuble ici ».'), true);
     changed();
   }
 }
@@ -2380,6 +2399,26 @@ function retryVeg(now) {
   })().finally(() => { vegRetry = null; changed(); if (S.vegMiss && S.site === st && S.vegTry < 4) retryVeg(); });
 }
 $('btnSite').onclick = loadSite;
+/** Adresse de la position de l'appareil (GPS), écrite dans le champ Adresse. auto : au lancement, sans message d'erreur. */
+function locateMe(auto) {
+  if (!navigator.geolocation) { if (!auto) alert('Position indisponible sur cet appareil.'); return; }
+  status('Recherche de votre position…', true);
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    try {
+      const r = await fetchRetry(GEOPF + '/geocodage/reverse?limit=1&lon=' + lon.toFixed(6) + '&lat=' + lat.toFixed(6), null, 'Adresse de votre position', 2), j = await r.json(), f = j.features && j.features[0];
+      if (!f) throw new Error('aucune adresse en France à cet endroit');
+      // centre de la zone : la position elle-même (Lambert-93 déduit de l'écart entre l'adresse et la position)
+      const a = l93ToWgs(f.properties.x, f.properties.y), k = 111320, x = f.properties.x + (lon - a.lon) * k * Math.cos(lat * D2R), y = f.properties.y + (lat - a.lat) * k;
+      S.geoHit = { label: f.properties.label, lon, lat, x, y };
+      if (auto && $('addr').value.trim()) return;   // l'utilisateur a déjà tapé une adresse
+      $('addr').value = f.properties.label; $('addrFound').textContent = '';
+      status('Votre position : ' + f.properties.label + (pos.coords.accuracy ? ' (± ' + Math.round(pos.coords.accuracy) + ' m)' : '') + '. Touchez « Charger le site ».', true);
+    } catch (e) { console.warn(e); status('Adresse de votre position introuvable : ' + e.message, true); }
+  }, e => { console.warn(e); status(auto ? '' : 'Position refusée ou indisponible (' + e.message + ').', !auto); if (!auto) alert('Position indisponible : ' + e.message); },
+  { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 });
+}
+$('btnLocate').onclick = () => locateMe(false);
 $('cFar').onchange = e => { S.farOn = e.target.checked; actLog('Relief lointain : ' + S.farOn); if (S.farOn) { if (!S.site) status('Relief lointain : chargez d\'abord un site à partir d\'une adresse.', true); else ensureFar(); } G.farKey = null; changed(); };
 
 /* ------------------------------- Zone de 500 km : relief lointain (rotondité de la Terre) */
@@ -2482,17 +2521,37 @@ async function farTextures(far, mode) {
   if (far.loading && far.loading[mode]) return far.loading[mode];
   far.loading = far.loading || {};
   return far.loading[mode] = (async () => {
-    const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(4096, G.maxTex || 2048);
-    const get = (bb, w, what) => fetchImage(wmsUrl(layer, bb, w, w, fmt), what).catch(e => { console.warn(e); return null; });
+    const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(isMobile() ? 2048 : 4096, G.maxTex || 2048);
+    const get = (bb, w, what) => fetchImageTiled(layer, bb, w, w, fmt, false, what).catch(e => { console.warn(e); return null; });
     const canvasOf = (w, fill) => { const c = document.createElement('canvas'); c.width = c.height = w; const x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, w, w); return c; };
     const fill = mode === 'plan' ? '#f2efe9' : '#8a9a78', names = (c, k) => { if (mode === 'ortho' && far.cities[k] && far.cities[k].length) c.getContext('2d').drawImage(namesLayer(far.cities[k], far.bb[k], c.width, c.height), 0, 0); return c; };
     const bN = far.bb.N, nt = TN > TS ? 2 : 1, tw = TN / nt, hw = (bN[2] - bN[0]) / nt;
-    const tiles = []; for (let b = 0; b < nt; b++) for (let a = 0; a < nt; a++) tiles.push([a, b, [bN[0] + a * hw, bN[3] - (b + 1) * hw, bN[0] + (a + 1) * hw, bN[3] - b * hw]]);
-    const [iC, iF, ...iN] = await Promise.all([get(far.bb.C, TS, 'Relief lointain : image'), get(far.bb.F, TS, 'Relief lointain : image'), ...tiles.map(t => get(t[2], tw, 'Relief proche : image'))]);
-    const cC = canvasOf(TS, fill), cF = canvasOf(TS, fill), cN = canvasOf(TN, fill);
-    if (iC) cC.getContext('2d').drawImage(iC, 0, 0, TS, TS); if (iF) cF.getContext('2d').drawImage(iF, 0, 0, TS, TS);
-    tiles.forEach(([a, b], k) => { if (iN[k]) cN.getContext('2d').drawImage(iN[k], a * tw, b * tw, tw, tw); });
-    far.tex[mode] = { C: names(cC, 'C'), F: names(cF, 'F'), N: names(cN, 'N'), sN: TN, id: far.ver + mode };
+    // morceaux : [canevas, rectangle Lambert-93, taille (px), position x, y dans le canevas]
+    const parts = [['C', far.bb.C, TS, 0, 0], ['F', far.bb.F, TS, 0, 0]];
+    for (let b = 0; b < nt; b++) for (let a = 0; a < nt; a++) parts.push(['N', [bN[0] + a * hw, bN[3] - (b + 1) * hw, bN[0] + (a + 1) * hw, bN[3] - b * hw], tw, a * tw, b * tw]);
+    const img = [], fetchMissing = () => Promise.all(parts.map((q, i) => img[i] ? null : get(q[1], q[2], q[0] === 'N' ? 'Relief proche : image' : 'Relief lointain : image').then(im => { if (im) img[i] = im; })));
+    let ver = 0;
+    const build = () => {
+      const cv = { C: canvasOf(TS, fill), F: canvasOf(TS, fill), N: canvasOf(TN, fill) };
+      // morceau manquant : la même zone tirée de l'image du niveau plus grossier (moins fine, mais juste)
+      const crop = (dst, D, src, Sb) => { const s = src.width / (Sb[2] - Sb[0]); dst.getContext('2d').drawImage(src, (D[0] - Sb[0]) * s, (Sb[3] - D[3]) * s, (D[2] - D[0]) * s, (D[3] - D[1]) * s, 0, 0, dst.width, dst.height); };
+      const at = k => parts.findIndex(q => q[0] === k);
+      if (img[at('C')]) crop(cv.F, far.bb.F, img[at('C')], far.bb.C);
+      if (img[at('F')]) crop(cv.N, far.bb.N, img[at('F')], far.bb.F); else if (img[at('C')]) crop(cv.N, far.bb.N, img[at('C')], far.bb.C);
+      parts.forEach(([k, , w, x, y], i) => { if (img[i]) cv[k].getContext('2d').drawImage(img[i], x, y, w, w); });
+      return { C: names(cv.C, 'C'), F: names(cv.F, 'F'), N: names(cv.N, 'N'), sN: TN, id: far.ver + mode + '#' + ver++ };
+    };
+    await fetchMissing();
+    far.tex[mode] = build();
+    if (img.filter(Boolean).length < parts.length) (async () => {   // images non reçues de l'IGN : nouveaux essais en arrière-plan
+      for (const wait of [4000, 20000, 60000, 180000]) {
+        await new Promise(r => setTimeout(r, wait));
+        if (S.far !== far) return;
+        const n0 = img.filter(Boolean).length; await fetchMissing();
+        if (img.filter(Boolean).length > n0) { far.tex[mode] = build(); S.dirty = true; status('Relief lointain : images complétées.', true); }
+        if (img.filter(Boolean).length === parts.length) return;
+      }
+    })();
     return far.tex[mode];
   })();
 }
@@ -4404,7 +4463,7 @@ $('btnMenu').onclick = () => document.body.classList.toggle('menu');
 $('shade').onclick = closeMenu;
 // boutons du panneau qui demandent ensuite d'agir sur le plan : le tiroir se referme
 document.querySelector('aside').addEventListener('click', e => {
-  const b = e.target.closest('button'); if (isMobile() && b && /^(btnSite|btnDraw|btnTraj|btnScale|btnResetB)$/.test(b.id)) setTimeout(closeMenu, 0);
+  const b = e.target.closest('button'); if (isMobile() && b && /^(btnSite|btnDraw|btnNewB|btnTraj|btnScale|btnResetB)$/.test(b.id)) setTimeout(closeMenu, 0);
 });
 // deux doigts : pincer = zoom, tourner = rotation de la vue, glisser verticalement (3D) = inclinaison ; appui long = menu (clic droit)
 const touch = { pts: new Map(), g: null, lp: null, eat: new Set() };
@@ -4611,6 +4670,7 @@ loadSettings();
 new ResizeObserver(() => { const had = CW; resizeCanvas(); if (!had) fitView(); }).observe($('stage'));
 resizeCanvas();
 applyMobile();
+if (isMobile() && !$('addr').value.trim()) setTimeout(() => locateMe(true), 300);   // smartphone : adresse de sa position au lancement
 syncUI();
 setMode('select');
 status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle vert (l\'immeuble) et un segment rouge d\'échelle, ou essayez le plan de démonstration.');
