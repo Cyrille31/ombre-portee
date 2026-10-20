@@ -102,6 +102,7 @@ body.mobile #toolbar{flex-wrap:nowrap;overflow-x:auto;padding:4px 6px;scrollbar-
 body.mobile #toolbar::-webkit-scrollbar{display:none}
 body.mobile #toolbar>*{flex:none}
 body.mobile #toolbar .sep{display:none}
+body.mobile #btnDemo{display:none}
 body.mobile #btnMenu{font-size:20px;line-height:1;padding:2px 10px}
 body.mobile button,body.mobile select{min-height:34px}
 body.mobile input[type=text],body.mobile select,body.mobile textarea{font-size:16px}
@@ -306,8 +307,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
         </select>
         <button id="btnNow">Maintenant</button>
         <div class="grp" title="Afficher">
-          <label title="Afficher les immeubles projetés"><input type="checkbox" id="cbProj" checked> Immeuble</label>
-          <label title="Ombre des immeubles projetés (décocher pour mieux voir les ombres d'un scénario)"><input type="checkbox" id="cbShadow" checked> Ombre</label>
+          <label title="Immeubles projetés et leur ombre (décocher pour mieux voir les ombres d'un scénario ou les arbres)"><input type="checkbox" id="cbProj" checked> Immeuble + ombre</label>
           <label title="Arbres (site IGN avec LiDAR)"><input type="checkbox" id="cbTrees" checked> Arbres</label>
         </div>
         <label title="Photo aérienne (sinon plan IGN)"><input type="checkbox" id="cbPhoto" checked> Photo</label>
@@ -1344,8 +1344,7 @@ function setUtcMode(u) {
 $('btnLocal').onclick = () => setUtcMode(false);
 $('btnUTC').onclick = () => setUtcMode(true);
 function stopPlay() { if (S.playing) togglePlay(); }
-$('cbProj').onchange = e => { S.showProj = e.target.checked; if (!S.showProj) S.editB = false; changed(); };
-$('cbShadow').onchange = e => { S.showProjShadow = e.target.checked; changed(); };
+$('cbProj').onchange = e => { S.showProj = S.showProjShadow = e.target.checked; if (!S.showProj) S.editB = false; changed(); };
 $('cbPhoto').onchange = e => { S.bgMode = e.target.checked ? 'ortho' : 'plan'; if (S.layers) { composeSite(); if (!S.layers[S.bgMode]) retryLayers(true); } changed(); };
 $('cbTrees').onchange = e => { S.showTrees = e.target.checked; changed(); };
 $('btnNow').onclick = () => {
@@ -1500,7 +1499,7 @@ function syncUI() {
   $('cHigh').checked = S.hHigh; $('rowHigh').hidden = !S.terrain;
   if (S.building) { $('colRoof').value = S.building.roofCol; $('colWall').value = S.building.wallCol; }
   $('siteDims').textContent = S.site && S.site.Lx ? 'actuelle : ' + fmtNum(S.site.Lx, 0) + ' × ' + fmtNum(S.site.Ly, 0) + ' m' : '';
-  $('cbProj').checked = S.showProj; $('cbShadow').checked = S.showProjShadow; $('cbPhoto').checked = S.bgMode === 'ortho'; $('cbTrees').checked = S.showTrees;
+  $('cbProj').checked = S.showProj && S.showProjShadow; $('cbPhoto').checked = S.bgMode === 'ortho'; $('cbTrees').checked = S.showTrees;
   $('cbPhoto').parentElement.hidden = !S.layers;
   { const ok = !!(S.veg || S.vegMiss), l = $('cbTrees').parentElement; $('cbTrees').disabled = !S.veg; l.classList.toggle('off', !ok);
     l.title = S.veg ? 'Arbres (LiDAR HD)' : S.vegMiss ? 'Arbres : en attente des données de l\'IGN' : S.site ? 'Pas d\'arbres : LiDAR HD indisponible ici' : 'Arbres : chargez un site à partir d\'une adresse'; }
@@ -1944,6 +1943,9 @@ function menuProj(b, part, cx, cy) {
 function menuBg(cx, cy, P, FP) {
   openMenu(cx, cy, 'Fond', m => {
     if (FP) { m.button('📍 Nouvelle zone de travail ici (' + $('siteSize').value + ' m)', () => { closePop(); newZoneAt(FP.X, FP.Y); }); m.hint('Remplace la zone de travail actuelle (même taille que « Zone de »), centrée sur ce point du relief lointain.'); m.sep(); }
+    if (P && !FP && S.site) { const ppm = pxPerM(), X = S.site.x0 + P.x / ppm, Y = S.site.y1 - P.y / ppm;
+      m.button('📍 Nouvelle zone de travail ici (' + $('siteSize').value + ' m)', () => { closePop(); newZoneAt(X, Y); });
+      m.hint('Remplace la zone actuelle par une zone de la taille choisie dans « Zone de » (bloc Site), centrée sur ce point. Les immeubles ajoutés suivent si possible.'); m.sep(); }
     if (P) m.button('🏢 Ajouter un immeuble ici (20 × 12 m)', () => { closePop(); addBuildingAt(P.x, P.y); });
     m.button('🏢 Dessiner un nouvel immeuble', () => { closePop(); if (S.view3d) exit3D(); setMode('draw'); status('Nouvel immeuble : glisser sur le plan pour tracer son rectangle.', true); });
     if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
@@ -2031,8 +2033,8 @@ async function wmsSlot(f) {   // 6 requêtes à la fois au plus
   if (wmsBusy >= 6) await new Promise(r => wmsQueue.push(r));
   wmsBusy++; try { return await f(); } finally { wmsBusy--; const n = wmsQueue.shift(); if (n) n(); }
 }
-async function fetchImageTiled(layer, bb, pw, ph, fmt, transp, what) {
-  const T = 1500, nx = Math.ceil(pw / T), ny = Math.ceil(ph / T);
+async function fetchImageTiled(layer, bb, pw, ph, fmt, transp, what, T = 1500) {
+  const nx = Math.ceil(pw / T), ny = Math.ceil(ph / T);
   if (nx * ny === 1) return wmsSlot(() => fetchImage(wmsUrl(layer, bb, pw, ph, fmt, transp), what));
   const c = document.createElement('canvas'); c.width = pw; c.height = ph; const x = c.getContext('2d'), sx = (bb[2] - bb[0]) / pw, sy = (bb[3] - bb[1]) / ph, jobs = [];
   for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
@@ -2045,21 +2047,23 @@ async function fetchImageTiled(layer, bb, pw, ph, fmt, transp, what) {
 }
 const LAYER_DEF = { plan: () => [SITE_BG.plan.base, 'image/png', false, 'Plan IGN'], ortho: () => [SITE_BG.ortho.base, 'image/jpeg', false, 'Photo aérienne'], cad: () => [CAD_LAYER, 'image/png', true, 'Cadastre'] };
 /** Couches du site absentes (téléchargement raté) : nouvel essai en arrière-plan, puis le fond se recompose. */
-let layerRetry = null;
+let layerRetry = null, layerWake = null;
 function retryLayers(now) {
-  const st = S.site; if (!st || !S.layers || layerRetry) return;
+  const st = S.site; if (!st || !S.layers) return;
+  if (layerRetry) { if (now && layerWake) layerWake(); return; }   // essai déjà programmé : avancé à tout de suite
   const miss = ['plan', 'ortho', 'cad'].filter(k => !S.layers[k]); if (!miss.length) return;
   const any = S.layers.plan || S.layers.ortho || S.layers.cad || S.layers.blank, bb = [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1], site = st;
   S.layerTry = (S.layerTry || 0) + 1;
   layerRetry = (async () => {
-    if (!now) await new Promise(r => setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.layerTry - 1, 3)]));
+    if (!now) await new Promise(r => { layerWake = r; setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.layerTry - 1, 3)]); });
+    layerWake = null;
     if (S.site !== site) return;
     const got = [];
-    await Promise.all(miss.map(k => { const [l, f, t, w] = LAYER_DEF[k](); return fetchImageTiled(l, bb, any.width, any.height, f, t, w).then(im => {
+    await Promise.all(miss.map(k => { const [l, f, t, w] = LAYER_DEF[k](); return fetchImageTiled(l, bb, any.width, any.height, f, t, w, 750).then(im => {
       if (S.site !== site) return; const c = document.createElement('canvas'); c.width = any.width; c.height = any.height; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); S.layers[k] = c; got.push(LAYER_DEF[k]()[3]);
     }).catch(e => console.warn(e)); }));
     if (got.length && S.site === site) { composeSite(); status('Couche reçue de l\'IGN : ' + got.join(', ') + '.', true); }
-  })().finally(() => { layerRetry = null; changed(); if (S.site === site && S.layerTry < 4) retryLayers(); });
+  })().finally(() => { layerRetry = null; changed(); if (S.site === site) retryLayers(); });
 }
 /** Les trois couches (plan IGN, photo, cadastre) sont téléchargées une fois ; le fond affiché se recompose aussitôt. */
 async function fetchLayers(bb, pw, ph, noCad) {
@@ -2384,19 +2388,21 @@ async function loadSiteRect(g, bb, keepView) {
   }
 }
 /** Modèle de surface LiDAR (arbres, formes des toits) non reçu : nouvel essai en arrière-plan. */
-let vegRetry = null;
+let vegRetry = null, vegWake = null;
 function retryVeg(now) {
-  const st = S.site, T = S.terrain; if (!st || !T || !S.vegMiss || vegRetry) return;
+  const st = S.site, T = S.terrain; if (!st || !T || !S.vegMiss) return;
+  if (vegRetry) { if (now && vegWake) vegWake(); return; }
   S.vegTry = (S.vegTry || 0) + 1;
   vegRetry = (async () => {
-    if (!now) await new Promise(r => setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.vegTry - 1, 3)]));
+    if (!now) await new Promise(r => { vegWake = r; setTimeout(r, [4000, 20000, 60000, 180000][Math.min(S.vegTry - 1, 3)]); });
+    vegWake = null;
     if (S.site !== st) return;
     const mns = await fetchGrid('IGNF_LIDAR-HD_MNS_ELEVATION.ELEVATIONGRIDCOVERAGE.LAMB93', [st.x0, st.y1 - st.Ly, st.x0 + st.Lx, st.y1], T.nx, T.ny, 'Végétation').catch(e => { console.warn(e); return null; });
     if (!mns || S.site !== st) return;
     const nRoof = computeRoofs(mns, S.terrain); G.nbKey = '';
     S.veg = vegFromMNS(mns, S.terrain); G.vegKey = ''; S.vegMiss = false;
     status('Arbres reçus de l\'IGN : ' + S.veg.trees.length + ' arbre(s)' + (nRoof ? ', ' + nRoof + ' toit(s) en pente' : '') + '.', true);
-  })().finally(() => { vegRetry = null; changed(); if (S.vegMiss && S.site === st && S.vegTry < 4) retryVeg(); });
+  })().finally(() => { vegRetry = null; changed(); if (S.vegMiss && S.site === st) retryVeg(); });
 }
 $('btnSite').onclick = loadSite;
 /** Adresse de la position de l'appareil (GPS), écrite dans le champ Adresse. auto : au lancement, sans message d'erreur. */
@@ -2419,6 +2425,9 @@ function locateMe(auto) {
   { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 });
 }
 $('btnLocate').onclick = () => locateMe(false);
+// réseau rétabli ou onglet de nouveau affiché : les couches manquantes sont redemandées aussitôt
+const retryNow = () => { if (document.hidden) return; retryLayers(true); retryVeg(true); };
+window.addEventListener('online', retryNow); document.addEventListener('visibilitychange', retryNow);
 $('cFar').onchange = e => { S.farOn = e.target.checked; actLog('Relief lointain : ' + S.farOn); if (S.farOn) { if (!S.site) status('Relief lointain : chargez d\'abord un site à partir d\'une adresse.', true); else ensureFar(); } G.farKey = null; changed(); };
 
 /* ------------------------------- Zone de 500 km : relief lointain (rotondité de la Terre) */
@@ -2521,7 +2530,7 @@ async function farTextures(far, mode) {
   if (far.loading && far.loading[mode]) return far.loading[mode];
   far.loading = far.loading || {};
   return far.loading[mode] = (async () => {
-    const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(isMobile() ? 2048 : 4096, G.maxTex || 2048);
+    const layer = mode === 'plan' ? SITE_BG.plan.base : SITE_BG.ortho.base, fmt = mode === 'plan' ? 'image/png' : 'image/jpeg', TS = Math.min(2048, G.maxTex || 2048), TN = Math.min(isMobile() || G.lowGPU ? 2048 : 4096, G.maxTex || 2048);
     const get = (bb, w, what) => fetchImageTiled(layer, bb, w, w, fmt, false, what).catch(e => { console.warn(e); return null; });
     const canvasOf = (w, fill) => { const c = document.createElement('canvas'); c.width = c.height = w; const x = c.getContext('2d'); x.fillStyle = fill; x.fillRect(0, 0, w, w); return c; };
     const fill = mode === 'plan' ? '#f2efe9' : '#8a9a78', names = (c, k) => { if (mode === 'ortho' && far.cities[k] && far.cities[k].length) c.getContext('2d').drawImage(namesLayer(far.cities[k], far.bb[k], c.width, c.height), 0, 0); return c; };
@@ -2602,7 +2611,7 @@ function buildFar() {
     G.farTexId = tx.id;
     for (const [k, c] of [['farTexC', tx.C], ['farTexF', tx.F], ['farTexN', tx.N]]) {
       G[k] = G[k] || gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G[k]); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c); gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, capCanvas(c)); gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       if (G.aniso) gl.texParameterf(gl.TEXTURE_2D, G.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
@@ -3749,7 +3758,7 @@ function drawRuler(ctx, toScr) {
 
 /* ---------------------------------------------------------- Vue 3D (WebGL 2) */
 // Repère 3D : X = x du plan, Z = y du plan, Y = vertical (unité : pixel du plan)
-const G = { gl: null, cam: { tx: 0, tz: 0, yaw: 0, pitch: 0, dist: 1000 }, fov: 40 * D2R, nbKey: '', planSrc: null, idsVer: -1 };
+const G = { lowGPU: (() => { try { return localStorage.getItem('ombre-lowgpu') === '1'; } catch (e) { return false; } })(), gl: null, cam: { tx: 0, tz: 0, yaw: 0, pitch: 0, dist: 1000 }, fov: 40 * D2R, nbKey: '', planSrc: null, idsVer: -1 };
 const v3 = {
   sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
   mul: (a, k) => [a[0] * k, a[1] * k, a[2] * k], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
@@ -3885,7 +3894,7 @@ function initGL() {
     G.gl = gl;
     G.main = glProgram(gl, VS_MAIN, FS_MAIN); G.depth = glProgram(gl, VS_DEPTH, FS_DEPTH);
     G.maxTex = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-    G.sm = Math.min(4096, G.maxTex);
+    G.sm = Math.min(G.lowGPU ? 2048 : 4096, G.maxTex);
     G.shadowTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex);
     gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, G.sm, G.sm);
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE],
@@ -3918,11 +3927,14 @@ function initGL() {
     alert('La vue 3D n\'est pas disponible : ' + e.message); return false;
   }
 }
+/** Taille maximale des textures : 2 048 px après une saturation de la carte graphique (ou sur smartphone). */
+const texCap = () => Math.min(G.maxTex || 2048, G.lowGPU ? 2048 : 8192);
+const capCanvas = c => { const m = texCap(); if (c.width <= m && c.height <= m) return c; const k = m / Math.max(c.width, c.height), o = document.createElement('canvas'); o.width = Math.floor(c.width * k); o.height = Math.floor(c.height * k); o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o; };
 function uploadTextures() {
   const gl = G.gl;
   if (G.planSrc !== S.clean) {
     G.planSrc = S.clean;
-    let src = S.clean; const k = Math.min(1, G.maxTex / Math.max(src.width, src.height));
+    let src = S.clean; const k = Math.min(1, texCap() / Math.max(src.width, src.height));
     if (k < 1) { const c = document.createElement('canvas'); c.width = Math.floor(src.width * k); c.height = Math.floor(src.height * k); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); src = c; }
     gl.bindTexture(gl.TEXTURE_2D, G.planTex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -4502,11 +4514,14 @@ function touchGestures(el, is3d) {
     let da = Math.atan2(Math.sin(q.a - g.a), Math.cos(q.a - g.a));
     if (!g.turn && Math.abs(da) > 12 * D2R) g.turn = true;   // rotation seulement au-delà de 12° (évite de tourner en zoomant)
     if (!g.turn) da = 0;
-    if (is3d) {
-      const far = S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6;
-      G.cam.dist = clamp(g.cam.dist / k, 5, far);
-      G.cam.yaw = mod(g.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI;
-      G.cam.pitch = clamp(g.cam.pitch - (q.m.y - g.m.y) * 0.006, 0, 80 * D2R);
+    // 2D : deux doigts qui montent ensemble (sans pincer ni tourner) = passage en 3D, puis inclinaison
+    if (!S.view3d && !g.turn && Math.abs(k - 1) < 0.12 && g.m.y - q.m.y > 40 && Math.abs(q.m.x - g.m.x) < 0.5 * (g.m.y - q.m.y) && enter3D(true)) { g.c3 = { cam: { ...G.cam }, m: q.m, d: q.d, a: q.a }; S.dirty = true; return; }
+    if (S.view3d) {
+      if (!g.c3) g.c3 = { cam: is3d ? g.cam : { ...G.cam }, m: is3d ? g.m : q.m, d: is3d ? g.d : q.d, a: is3d ? g.a : q.a };
+      const c3 = g.c3, far = S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6, a3 = g.turn ? Math.atan2(Math.sin(q.a - c3.a), Math.cos(q.a - c3.a)) : 0;
+      G.cam.dist = clamp(c3.cam.dist * c3.d / q.d, 5, far);
+      G.cam.yaw = mod(c3.cam.yaw - a3 + Math.PI, 2 * Math.PI) - Math.PI;
+      G.cam.pitch = clamp(c3.cam.pitch - (q.m.y - c3.m.y) * 0.006, 0, 80 * D2R);
     } else {
       V.s = clamp(g.s * k, 0.02, 40); V.rot = mod(g.rot + da + Math.PI, 2 * Math.PI) - Math.PI;
       const c = Math.cos(V.rot), sn = Math.sin(V.rot), w = g.w;   // le point du plan sous les doigts les suit
@@ -4522,7 +4537,7 @@ function touchGestures(el, is3d) {
     if (touch.g && touch.pts.size < 2) {
       touch.g = null;
       for (const id of touch.pts.keys()) touch.eat.add(id);   // le doigt restant ne reprend pas un glissement
-      if (is3d && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D
+      if (S.view3d && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D
       changed();
     }
   };
@@ -4571,8 +4586,16 @@ window.addEventListener('unhandledrejection', e => reportError(e, 'promesse'));
 $('errClose').onclick = () => { $('errBox').hidden = true; };
 $('errCopy').onclick = async () => { const t = reportText(); try { await navigator.clipboard.writeText(t); status('Rapport copié : collez-le dans votre message.', true); } catch (e) { prompt('Copiez ce rapport :', t); } };
 $('errSave').onclick = async () => { try { await saveBlob(new Blob([projectJSON()], { type: 'application/json' }), (S.fileName || 'projet') + '_secours.ombre.json', 'Projet Ombre portée', 'application/json', '.json'); } catch (e) { alert('Enregistrement impossible : ' + e.message); } };
-glcv.addEventListener('webglcontextlost', e => { e.preventDefault(); reportError(new Error('Contexte WebGL perdu (carte graphique) : la vue 3D va être réinitialisée'), '3D'); });
-glcv.addEventListener('webglcontextrestored', () => { G.gl = null; G.planSrc = null; G.idsVer = -1; G.nbKey = ''; G.groundKey = ''; G.vegKey = ''; G.bufs = {}; initGL(); S.dirty = true; actLog('Contexte WebGL rétabli'); });
+// carte graphique saturée : le navigateur retire le contexte 3D ; on le reprend en qualité allégée (textures ≤ 2 048 px, ombres 2 048 px)
+glcv.addEventListener('webglcontextlost', e => {
+  e.preventDefault(); G.lowGPU = true; try { localStorage.setItem('ombre-lowgpu', '1'); } catch (er) { }
+  actLog('Contexte WebGL perdu'); status('Carte graphique saturée : la vue 3D est relancée en qualité allégée…', true);
+});
+glcv.addEventListener('webglcontextrestored', () => {
+  G.gl = null; G.planSrc = null; G.idsVer = -1; G.nbKey = ''; G.groundKey = ''; G.vegKey = ''; G.bufs = {};
+  G.farTexC = G.farTexF = G.farTexN = null; G.farTexId = null; G.farKey = null;   // textures du relief lointain : à recréer dans le nouveau contexte
+  initGL(); S.dirty = true; actLog('Contexte WebGL rétabli'); status('Vue 3D rétablie (qualité allégée pour ménager la carte graphique).', true);
+});
 // sauvegarde automatique (IndexedDB) toutes les minutes, et après une erreur
 function idb() { return new Promise((res, rej) => { const q = indexedDB.open('ombre-portee', 1); q.onupgradeneeded = () => q.result.createObjectStore('kv'); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
 async function idbSet(k, v) { const db = await idb(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error); }); }

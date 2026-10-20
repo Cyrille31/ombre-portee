@@ -15,14 +15,14 @@ Le même fichier fonctionne sur téléphone : ouvrez le lien GitHub Pages (ou le
 
 - le panneau des réglages se range dans un tiroir, ouvert par le bouton **☰** en haut à gauche ; touchez la zone grisée pour le refermer ;
 - la boussole, le cadran solaire et le calendrier sont côte à côte en haut de l'écran ; la date et l'heure sont en bas (en haut à droite quand le téléphone est à l'horizontale) ;
-- la barre d'outils défile horizontalement.
+- la barre d'outils défile horizontalement (sans le bouton « Plan de démonstration »).
 
 | Geste | Effet |
 |---|---|
 | Un doigt | Déplacer la vue ou l'immeuble, tourner les cadrans (comme à la souris) |
 | Pincer à deux doigts | Zoom |
 | Tourner à deux doigts | Rotation de la vue |
-| Glisser à deux doigts vers le haut (3D) | Incliner la vue ; revenir à plat repasse en 2D |
+| Glisser à deux doigts vers le haut | En 2D : passer en 3D ; en 3D : incliner la vue. Revenir à plat repasse en 2D |
 | Appui long (½ seconde) | Menu local (comme le clic droit) : hauteur d'une construction, couleurs, etc. |
 | Double appui sur l'immeuble | Afficher ses poignées |
 
@@ -39,7 +39,7 @@ Aucun immeuble projeté n'est placé au départ : ajoutez-le avec **+ Immeuble**
 
 La latitude, la longitude et l'orientation du nord sont réglées automatiquement. La vue passe en 3D : les bâtiments sont posés sur le relief et les ombres tombent sur le terrain en pente et sur les bâtiments. Placez ensuite votre immeuble (murs blancs et toit de tuiles par défaut, posé sur le terrain) et ajustez ses dimensions. Un clic droit sur un bâtiment permet de corriger sa hauteur.
 
-Le serveur de l'IGN est parfois lent ou en panne passagère, surtout pour les grandes images. Les couches sont donc téléchargées en morceaux. Une couche non reçue (photo, plan, cadastre, ou arbres) est signalée par un **⚠** à côté de sa case, et le logiciel réessaie seul (après 4 s, 20 s, 1 min puis 3 min). Un clic sur le ⚠ réessaie aussitôt. Pour le relief lointain, une image manquante est remplacée en attendant par la même zone tirée de l'image moins fine du niveau supérieur. Si aucune image n'arrive, le site s'ouvre quand même sur fond blanc, avec les bâtiments et le relief.
+Le serveur de l'IGN est parfois lent ou en panne passagère, surtout pour les grandes images. Les couches sont donc téléchargées en morceaux. Une couche non reçue (photo, plan, cadastre, ou arbres) est signalée par un **⚠** à côté de sa case, et le logiciel réessaie seul (après 4 s, 20 s, 1 min puis 3 min). Les essais continuent ensuite toutes les 3 minutes tant que la couche manque, et reprennent aussitôt quand le réseau revient ou que l'onglet est de nouveau affiché. Un clic sur le ⚠ réessaie aussitôt. Pour le relief lointain, une image manquante est remplacée en attendant par la même zone tirée de l'image moins fine du niveau supérieur. Si aucune image n'arrive, le site s'ouvre quand même sur fond blanc, avec les bâtiments et le relief.
 
 Il faut une connexion Internet au moment du chargement. Une fois enregistré, le projet contient toutes les données et s'ouvre hors ligne.
 
@@ -53,7 +53,7 @@ La case **Relief lointain** (décochée au lancement) télécharge, autour de l'
 - En 3D, il s'étend au-delà du plan jusqu'à l'horizon (inclinez la vue), ombré selon le soleil et avec ses propres ombres ; les hauteurs sont à l'échelle réelle. Il se raccorde au terrain précis du plan, même agrandi par ses poignées.
 - **Raccords sans couture** : à chaque jointure (plan → anneau de 5 km → 50 km → 500 km), les couleurs de l'image la moins fine sont ajustées sur celles de la plus fine, tranche par tranche le long du bord, puis reviennent progressivement à leurs vraies valeurs en s'éloignant. Près du plan, le relief est éclairé comme le plan.
 - Grâce à la courbure du relief, le soleil se couche d'abord à l'est et plus tard à l'ouest : la côte atlantique reste éclairée une dizaine de minutes après Toulouse.
-- **Nouvelle zone de travail** : en 3D, un clic droit sur le relief lointain, hors du plan, propose « Nouvelle zone de travail ici » : la zone actuelle est remplacée par une zone de la taille choisie dans « Zone de », centrée sur ce point (son adresse la plus proche est retrouvée automatiquement).
+- **Nouvelle zone de travail** : un clic droit (appui long sur smartphone) sur le fond, en 2D comme en 3D, sur le plan comme sur le relief lointain, propose « Nouvelle zone de travail ici » : la zone actuelle est remplacée par une zone de la taille choisie dans « Zone de », centrée sur ce point (son adresse la plus proche est retrouvée automatiquement).
 - Le **profil d'horizon** vu de l'adresse (tous les ½°, à 2 m du sol, depuis le bord du plan) est calculé sur la grille fine puis la grille grossière : quand le soleil passe derrière le relief, tout le plan est à l'ombre (en 2D comme en 3D), l'information sur le soleil donne les heures où il est réellement visible et la boussole grise la partie du ciel masquée par les montagnes.
 - Le relief est échantillonné (une altitude par maille) : un sommet très pointu entre deux points peut être un peu abaissé (quelques dizaines de mètres avec la maille de 100 m), ce qui reste négligeable pour l'horizon.
 
