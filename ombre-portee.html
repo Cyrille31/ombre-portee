@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ombre portée</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'> <rect width='256' height='256' rx='56' fill='%23fdf6e3'/> <g stroke='%23d9cfb8' stroke-width='3' fill='none'> <path d='M0 176H256M92 0V256M196 176V256M0 72H92'/> </g> <g fill='%23f5b301'><circle cx='58' cy='58' r='24'/> <g stroke='%23f5b301' stroke-width='7' stroke-linecap='round'> <path d='M58 18v-6M58 104v-6M18 58h-6M104 58h-6M30 30l-5-5M86 86l5 5M30 86l-5 5M86 30l5-5'/></g></g> <path d='M120 112 L176 112 L236 210 L236 236 L180 236 L120 168 Z' fill='%231e2440' opacity='.55'/> <rect x='120' y='112' width='56' height='56' rx='6' fill='%232563eb'/> <rect x='120' y='112' width='56' height='56' rx='6' fill='none' stroke='%230b2fa8' stroke-width='4'/> </svg>">
 <style>
@@ -86,6 +86,33 @@ input.big{font-size:18px;font-weight:600;width:90px}
 .pop .f .lbl{width:96px}
 .pop input[type=range]{flex:1}
 .pop .sep{border-top:1px solid var(--line);margin:6px 0}
+/* smartphone : panneau en tiroir (☰), barre d'outils défilante, commandes plus grandes */
+.mob{display:none}
+#shade{display:none}
+.sc,.drag{touch-action:none}
+body.mobile{touch-action:manipulation}
+body.mobile #app{height:100vh;height:100dvh}
+body.mobile .mob{display:inline-block}
+body.mobile aside{position:fixed;left:0;top:0;bottom:0;z-index:40;width:min(88vw,360px);min-width:0;transform:translateX(-102%);transition:transform .2s ease;box-shadow:4px 0 24px rgba(0,0,0,.25);padding-bottom:calc(40px + env(safe-area-inset-bottom))}
+body.mobile.menu aside{transform:none}
+body.mobile.menu #shade{display:block;position:fixed;inset:0;z-index:39;background:rgba(0,0,0,.3)}
+body.mobile #toolbar{flex-wrap:nowrap;overflow-x:auto;padding:4px 6px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+body.mobile #toolbar::-webkit-scrollbar{display:none}
+body.mobile #toolbar>*{flex:none}
+body.mobile #toolbar .sep{display:none}
+body.mobile #btnMenu{font-size:20px;line-height:1;padding:2px 10px}
+body.mobile button,body.mobile select{min-height:34px}
+body.mobile input[type=text],body.mobile select,body.mobile textarea{font-size:16px}
+body.mobile input[type=checkbox]{width:18px;height:18px}
+body.mobile #status{font-size:12px;padding-bottom:calc(4px + env(safe-area-inset-bottom))}
+body.mobile #clockBox{width:auto;max-width:calc(100% - 12px);display:flex;flex-wrap:wrap;align-items:baseline;justify-content:center;column-gap:8px;padding:4px 8px}
+body.mobile #cbDate{font-size:15px}
+body.mobile #cbTime{font-size:22px}
+body.mobile #clockBox .row{flex-basis:100%;flex-direction:row;flex-wrap:wrap;justify-content:center;margin:2px 0 0!important}
+body.mobile #clockBox .row>*{width:auto}
+body.mobile #clockBox button{min-height:30px}
+body.mobile #playSpeed{display:none}
+body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,calc(100vw - 16px))}
 @media print{
   @page{margin:10mm}
   html,body{height:auto;background:#fff}
@@ -245,8 +272,10 @@ input.big{font-size:18px;font-weight:600;width:90px}
   </section>
 </aside>
 
+<div id="shade"></div>
 <main>
   <div id="toolbar">
+    <button id="btnMenu" class="mob" title="Afficher les réglages">☰</button>
     <button id="btnOpen" title="Image (PNG, JPG…), PDF ou projet .ombre.json">📂 Ouvrir…</button>
     <button id="btnDemo">Plan de démonstration</button>
     <span class="sep"></span>
@@ -896,7 +925,8 @@ function render(ctx, W, H, v, opt = {}) {
 
   const P = new Placer(W, H);
   P.add(dialLayout(W, H).rect);     // boussole et cadran solaire
-  P.add({ x: 0, y: H - 46, w: 210, h: 46 });     // échelle graphique
+  const bIn = print ? 0 : bottomInset();
+  P.add({ x: 0, y: H - 46 - bIn, w: 210, h: 46 + bIn });     // échelle graphique (et afficheur date / heure sur smartphone)
   if (NB && S.showNbLbl) {   // hauteurs des constructions voisines
     ctx.font = 'bold 12px system-ui, sans-serif';
     for (const c of NB.list) if (c.h !== undefined && Math.max(c.x1 - c.x0, c.y1 - c.y0) * v.s > 28) {
@@ -1032,7 +1062,7 @@ function render(ctx, W, H, v, opt = {}) {
   drawDials(ctx, W, H, rotS(northVecs().N, v), sun);
   // échelle graphique
   {
-    const mPerPx = 1 / (ppm * v.s), L = niceLen(140 * mPerPx), w = L / mPerPx, x0 = 14, y0 = H - 22;
+    const mPerPx = 1 / (ppm * v.s), L = niceLen(140 * mPerPx), w = L / mPerPx, x0 = 14, y0 = H - 22 - bIn;
     ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(x0 - 8, y0 - 18, w + 70, 30);
     for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#222'; ctx.fillRect(x0 + i * w / 4, y0, w / 4, 6); }
     ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, w, 6);
@@ -1853,7 +1883,7 @@ function openMenu(cx, cy, title, build) {
   // à droite du pointeur, sinon à gauche : jamais dessous (le clic droit irait au navigateur)
   hPop.style.left = (cx + 14 + rc.width < innerWidth - 4 ? cx + 14 : Math.max(4, cx - 14 - rc.width)) + 'px';
   hPop.style.top = clamp(cy - 24, 4, innerHeight - rc.height - 4) + 'px';
-  const first = hPop.querySelector('input[type=text]'); if (first) { first.focus(); first.select(); }
+  const first = hPop.querySelector('input[type=text]'); if (first && !isMobile()) { first.focus(); first.select(); }
   changed();
 }
 document.getElementById('app').addEventListener('contextmenu', e => { if (e.target.tagName !== 'INPUT' || e.target.type !== 'text') e.preventDefault(); });
@@ -2592,7 +2622,15 @@ function siteFromSave(st) {
 
 
 /* ------------------------------------------- Boussole et cadran solaire */
+const isMobile = () => document.body.classList.contains('mobile');
+/** Hauteur réservée en bas de l'écran (smartphone : afficheur date / heure). */
+const bottomInset = () => { if (!isMobile() || dialLayout().wide) return 0; const b = $('clockBox'); return b.hidden ? 0 : b.offsetHeight + 10; };
 function dialLayout(W = CW, H = CH) {
+  if (isMobile()) {   // smartphone : boussole, cadran solaire et calendrier côte à côte en haut
+    // à l'horizontale (wide) : cadrans à gauche, afficheur date / heure en haut à droite ; sinon cadrans centrés, afficheur en bas
+    const wide = W > H * 1.3, gap = 14, R = clamp(Math.floor(Math.min((W - 4 * gap - 12) / 6, H * 0.13)), 26, 54), cy = R + 18, step = 2 * R + gap, cx = wide ? 14 + R : W / 2 - step;
+    return { R, cx, cy, sx: cx + step, sy: cy, R3: R, kx: cx + 2 * step, ky: cy, by: null, wide, rect: { x: cx - R - 14, y: 0, w: 2 * step + 2 * R + 28, h: cy + R + 24 } };
+  }
   const R = 58, cx = W - R - 18, cy = R + 18, sy = cy + 2 * R + 40, R3 = 58, ky = sy + R + 22 + R3, by = ky + R3 + 14;
   return { R, cx, cy, sx: cx, sy, R3, kx: cx, ky, by, rect: { x: W - 2 * R - 40, y: 0, w: 2 * R + 40, h: by + 150 } };
 }
@@ -2742,7 +2780,10 @@ const underDials = (rc, W = CW, H = CH) => { const d = dialLayout(W, H).rect; re
 /** Afficheur date / heure (élément HTML) sous les cadrans. */
 function placeClock() {
   const box = $('clockBox'); box.hidden = !S.clean; if (!S.clean) return;
-  const L = dialLayout(); box.style.left = Math.min(L.cx - box.offsetWidth / 2, CW - box.offsetWidth - 6) + 'px'; box.style.top = L.by + 'px';
+  const L = dialLayout();
+  if (L.by === null && L.wide) { box.style.left = Math.max(L.rect.x + L.rect.w, CW - box.offsetWidth - 8) + 'px'; box.style.top = '6px'; }   // smartphone à l'horizontale : en haut à droite
+  else if (L.by === null) { box.style.left = Math.max(6, (CW - box.offsetWidth) / 2) + 'px'; box.style.top = Math.max(L.rect.h, CH - box.offsetHeight - 8) + 'px'; }   // smartphone : en bas, sous le pouce
+  else { box.style.left = Math.min(L.cx - box.offsetWidth / 2, CW - box.offsetWidth - 6) + 'px'; box.style.top = L.by + 'px'; }
   const m = Math.round(mod(S.minute, 1440)) % 1440, c = fromDays(S.day);
   $('cbDate').textContent = c.d + ' ' + MONTHS[c.m];
   $('cbTime').textContent = pad2(Math.floor(m / 60)) + ':' + pad2(m % 60) + (S.utcMode ? ' TU' : '');
@@ -4069,8 +4110,9 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
   let nx = 0, ny = -1; if (o && nq) { const l = Math.hypot(nq.x - o.x, nq.y - o.y); if (l > 1e-6) { nx = (nq.x - o.x) / l; ny = (nq.y - o.y) / l; } }
   drawDials(ctx, CW, CH, { x: nx, y: ny }, sun);
-  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, CH - 26, 330, 20); ctx.fillStyle = '#334';
-  ctx.fillText('Vue 3D — Maj + glisser : pivoter / incliner', 12, CH - 16);
+  const yH = CH - 16 - (ctx === octx ? bottomInset() : 0), tH = isMobile() ? 'Vue 3D — 2 doigts : pincer, tourner, glisser = incliner' : 'Vue 3D — Maj + glisser : pivoter / incliner';
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, yH - 10, ctx.measureText(tH).width + 14, 20); ctx.fillStyle = '#334';
+  ctx.fillText(tH, 12, yH);
 }
 /** Rayon issu d'un point de l'écran. */
 function ray3(sx, sy) {
@@ -4142,7 +4184,8 @@ function enter3D(flat) {
   if (!G.camSet || flat) G.cam.pitch = 0;
   G.camSet = true;
   setView3d(true);
-  status('Vue 3D : Maj + glisser = pivoter / incliner · glisser = déplacer la vue ou l\'immeuble · molette = zoom · clic droit = hauteur d\'une construction.', true);
+  status(isMobile() ? 'Vue 3D : deux doigts = pincer (zoom), tourner, glisser vers le haut (incliner) · un doigt = déplacer la vue ou l\'immeuble · appui long = menu.'
+    : 'Vue 3D : Maj + glisser = pivoter / incliner · glisser = déplacer la vue ou l\'immeuble · molette = zoom · clic droit = hauteur d\'une construction.', true);
   return true;
 }
 function exit3D() {
@@ -4278,6 +4321,87 @@ glcv.addEventListener('wheel', e => {
   G.cam.dist = nd; S.dirty = true;
 }, { passive: false });
 $('v2d').onclick = exit3D;
+
+/* ------------------------------------------------------------ Smartphone et écran tactile */
+// mode smartphone : écran étroit, ou écran tactile peu haut (téléphone à l'horizontale)
+const mqMobile = matchMedia('(max-width: 760px), (pointer: coarse) and (max-height: 520px)');
+function applyMobile() {
+  document.body.classList.toggle('mobile', mqMobile.matches);
+  if (!mqMobile.matches) document.body.classList.remove('menu');
+  resizeCanvas(); S.dirty = true;
+}
+mqMobile.addEventListener('change', applyMobile);
+const closeMenu = () => document.body.classList.remove('menu');
+$('btnMenu').onclick = () => document.body.classList.toggle('menu');
+$('shade').onclick = closeMenu;
+// boutons du panneau qui demandent ensuite d'agir sur le plan : le tiroir se referme
+document.querySelector('aside').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (isMobile() && b && /^(btnSite|btnDraw|btnTraj|btnScale|btnResetB)$/.test(b.id)) setTimeout(closeMenu, 0);
+});
+// deux doigts : pincer = zoom, tourner = rotation de la vue, glisser verticalement (3D) = inclinaison ; appui long = menu (clic droit)
+const touch = { pts: new Map(), g: null, lp: null, eat: new Set() };
+function touchGestures(el, is3d) {
+  const pos = e => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const pair = () => { const [a, b] = [...touch.pts.values()]; return { m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x) }; };
+  const cancelLP = () => { if (touch.lp) { clearTimeout(touch.lp.t); touch.lp = null; } };
+  const abort = () => { if (is3d) drag3 = null; else { if (drag && drag.type === 'draw') S.temp = null; drag = null; } el.style.cursor = 'default'; S.dirty = true; };
+  el.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'touch') return;
+    touch.pts.set(e.pointerId, pos(e));
+    if (touch.pts.size === 1) {   // un doigt : gestes habituels ; immobile 0,55 s = menu local
+      const p = pos(e), cx = e.clientX, cy = e.clientY, id = e.pointerId;
+      cancelLP();
+      touch.lp = { p, id, t: setTimeout(() => {
+        touch.lp = null; touch.eat.add(id); abort();
+        if (navigator.vibrate) navigator.vibrate(12);
+        (is3d ? context3D : context2D)(p, cx, cy);
+      }, 550) };
+      return;
+    }
+    e.stopImmediatePropagation(); cancelLP();
+    for (const id of touch.pts.keys()) touch.eat.add(id);
+    if (touch.pts.size === 2) {
+      abort(); closePop();
+      const q = pair(); touch.g = { ...q, w: toW(q.m), s: V.s, rot: V.rot, cam: { ...G.cam }, turn: false };
+    }
+  }, true);
+  el.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'touch' || !touch.pts.has(e.pointerId)) return;
+    touch.pts.set(e.pointerId, pos(e));
+    if (touch.lp && touch.lp.id === e.pointerId && Math.hypot(pos(e).x - touch.lp.p.x, pos(e).y - touch.lp.p.y) > 9) cancelLP();
+    if (!touch.g || touch.pts.size < 2) { if (touch.eat.has(e.pointerId)) e.stopImmediatePropagation(); return; }
+    e.stopImmediatePropagation();
+    const g = touch.g, q = pair(), k = q.d / g.d;
+    let da = Math.atan2(Math.sin(q.a - g.a), Math.cos(q.a - g.a));
+    if (!g.turn && Math.abs(da) > 12 * D2R) g.turn = true;   // rotation seulement au-delà de 12° (évite de tourner en zoomant)
+    if (!g.turn) da = 0;
+    if (is3d) {
+      const far = S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6;
+      G.cam.dist = clamp(g.cam.dist / k, 5, far);
+      G.cam.yaw = mod(g.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI;
+      G.cam.pitch = clamp(g.cam.pitch - (q.m.y - g.m.y) * 0.006, 0, 80 * D2R);
+    } else {
+      V.s = clamp(g.s * k, 0.02, 40); V.rot = mod(g.rot + da + Math.PI, 2 * Math.PI) - Math.PI;
+      const c = Math.cos(V.rot), sn = Math.sin(V.rot), w = g.w;   // le point du plan sous les doigts les suit
+      V.ox = q.m.x - V.s * (w.x * c - w.y * sn); V.oy = q.m.y - V.s * (w.x * sn + w.y * c);
+    }
+    S.dirty = true;
+  }, true);
+  const up = e => {
+    if (e.pointerType !== 'touch') return;
+    touch.pts.delete(e.pointerId);
+    if (touch.lp && touch.lp.id === e.pointerId) cancelLP();
+    if (touch.eat.delete(e.pointerId)) e.stopImmediatePropagation();
+    if (touch.g && touch.pts.size < 2) {
+      touch.g = null;
+      for (const id of touch.pts.keys()) touch.eat.add(id);   // le doigt restant ne reprend pas un glissement
+      if (is3d && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D
+      changed();
+    }
+  };
+  el.addEventListener('pointerup', up, true); el.addEventListener('pointercancel', up, true);
+}
+touchGestures(cv, false); touchGestures(glcv, true);
 $('v3d').onclick = enter3D;
 $('btnTop').onclick = () => { G.cam.pitch = 0; exit3D(); };
 function snapshot3d() {
@@ -4418,6 +4542,7 @@ loadSettings();
 }
 new ResizeObserver(() => { const had = CW; resizeCanvas(); if (!had) fitView(); }).observe($('stage'));
 resizeCanvas();
+applyMobile();
 syncUI();
 setMode('select');
 status('Ouvrez un plan cadastral (image ou PDF) contenant un rectangle vert (l\'immeuble) et un segment rouge d\'échelle, ou essayez le plan de démonstration.');

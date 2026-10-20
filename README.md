@@ -9,6 +9,23 @@ Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
 Aucune installation : double-cliquez sur **`ombre-portee.html`**. Le fichier s'ouvre dans votre navigateur (Chrome, Edge ou Firefox, sur PC).
 L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir un PDF et pour lire automatiquement la longueur de l'échelle.
 
+## Sur smartphone ou tablette
+
+Le même fichier fonctionne sur téléphone : ouvrez le lien GitHub Pages (ou le fichier) dans le navigateur. Sur un écran étroit, l'affichage s'adapte :
+
+- le panneau des réglages se range dans un tiroir, ouvert par le bouton **☰** en haut à gauche ; touchez la zone grisée pour le refermer ;
+- la boussole, le cadran solaire et le calendrier sont côte à côte en haut de l'écran ; la date et l'heure sont en bas (en haut à droite quand le téléphone est à l'horizontale) ;
+- la barre d'outils défile horizontalement.
+
+| Geste | Effet |
+|---|---|
+| Un doigt | Déplacer la vue ou l'immeuble, tourner les cadrans (comme à la souris) |
+| Pincer à deux doigts | Zoom |
+| Tourner à deux doigts | Rotation de la vue |
+| Glisser à deux doigts vers le haut (3D) | Incliner la vue ; revenir à plat repasse en 2D |
+| Appui long (½ seconde) | Menu local (comme le clic droit) : hauteur d'une construction, couleurs, etc. |
+| Double appui sur l'immeuble | Afficher ses poignées |
+
 ## Site à partir d'une adresse (recommandé)
 
 Dans le bloc « Site à partir d'une adresse », tapez l'adresse, choisissez la taille du carré (100 à 800 m) et le fond de plan, puis cliquez sur **Charger le site**. Le logiciel télécharge auprès de l'IGN (Géoplateforme, gratuit, sans compte) :
