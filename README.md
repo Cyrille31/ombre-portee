@@ -6,7 +6,7 @@ Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
 
 ## Lancement
 
-Le bouton **❓ Mode d'emploi** (barre du haut) résume l'utilisation et indique la **version** du logiciel et sa **licence** (MIT, voir `LICENSE`).
+Le bouton **❓ Mode d'emploi** (barre du haut) résume l'utilisation et indique la **version** du logiciel, sa **licence** (MIT, © 2026 CGExcel, voir `LICENSE`) et celles des données : adresses de la Base Adresse Nationale et des Bases Adresses Locales (BAL), données IGN, toutes sous Licence Ouverte Etalab 2.0.
 
 Aucune installation : double-cliquez sur **`ombre-portee.html`**. Le fichier s'ouvre dans votre navigateur (Chrome, Edge ou Firefox, sur PC).
 L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir un PDF et pour lire automatiquement la longueur de l'échelle.
@@ -27,6 +27,7 @@ Le même fichier fonctionne sur téléphone : ouvrez le lien GitHub Pages (ou le
 | Glisser à deux doigts vers le haut | En 2D : passer en 3D ; en 3D : incliner la vue. Revenir à plat repasse en 2D |
 | Appui long (½ seconde) | Menu local (comme le clic droit) : hauteur d'une construction, couleurs, etc. |
 | Double appui sur l'immeuble | Afficher ses poignées |
+| Double appui sur un cadran | Boussole : nord en haut · cadran solaire : heure actuelle · calendrier : date du jour (double clic à la souris) |
 
 ## Site à partir d'une adresse (recommandé)
 
@@ -52,7 +53,7 @@ Il faut une connexion Internet au moment du chargement. Une fois enregistré, le
 La case **Relief lointain** (décochée au lancement) télécharge, autour de l'adresse du site, le relief à 100 m sur 50 km et à 1 km jusqu'à 250 km (RGE ALTI en France, SRTM au-delà : Pyrénées espagnoles et Alpes comprises), avec la photo (et les noms des villes : plus de 5 000 habitants à moins de 25 km, plus de 40 000 au-delà) ou le plan IGN selon la case « Photo ». Sur 5 km autour du plan, l'image est bien plus fine (environ 2,7 m par pixel, relief à la maille de 100 m). Comptez une quinzaine de secondes ; changer de fond télécharge l'autre jeu d'images à la demande. « Zone de » ne règle que la carte de travail, qui reste précise (bâtiments, LiDAR).
 
 - Le relief est abaissé de d²/2R avec la distance d à l'adresse pour tenir compte de la **rotondité de la Terre** (R = rayon terrestre corrigé de la réfraction atmosphérique standard, k = 0,13).
-- En 2D (vue de dessus), ses images (photo ou plan IGN, selon la case « Photo ») restent affichées autour du plan : dézoomez pour voir les environs.
+- En 2D (vue de dessus), ses images (photo ou plan IGN, selon la case « Photo ») restent affichées autour du plan : dézoomez pour voir les environs. En 2D comme en 3D, le zoom arrière va jusqu'à voir toute la zone (500 × 500 km), même sur smartphone.
 - En 3D, il s'étend au-delà du plan jusqu'à l'horizon (inclinez la vue), ombré selon le soleil et avec ses propres ombres ; les hauteurs sont à l'échelle réelle. Il se raccorde au terrain précis du plan, même agrandi par ses poignées.
 - **Raccords sans couture** : à chaque jointure (plan → anneau de 5 km → 50 km → 500 km), les couleurs de l'image la moins fine sont ajustées sur celles de la plus fine, tranche par tranche le long du bord, puis reviennent progressivement à leurs vraies valeurs en s'éloignant. Près du plan, le relief est éclairé comme le plan.
 - Grâce à la courbure du relief, le soleil se couche d'abord à l'est et plus tard à l'ouest : la côte atlantique reste éclairée une dizaine de minutes après Toulouse.

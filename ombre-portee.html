@@ -344,7 +344,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <h3>2. Placer l'immeuble projeté</h3>
     <p><b>+ Immeuble</b> (bloc Immeuble) pose un immeuble de 20 × 12 m au centre de la vue ; ou clic droit / appui long sur le plan → <b>Ajouter un immeuble ici</b>, ou <b>Dessiner un immeuble</b>. Glissez-le pour le déplacer, ses poignées carrées pour le redimensionner, la ronde pour le pivoter. Hauteur, dimensions, couleurs, façade et forme du toit : bloc Immeuble ou clic droit sur l'immeuble.</p>
     <h3>3. Choisir le jour et l'heure</h3>
-    <p>Les trois cadrans : la <b>boussole</b> (tourne la vue), le <b>cadran solaire</b> (l'ombre du style suit le doigt ou la souris : heure) et le <b>calendrier</b> (jour de l'année). Molette sur un cadran ou sur la date et l'heure du panneau pour avancer pas à pas. <b>Animer</b> fait défiler la journée, <b>Maintenant</b> revient à l'instant présent. Heure locale ou TU : bloc Date et heure.</p>
+    <p>Les trois cadrans : la <b>boussole</b> (tourne la vue), le <b>cadran solaire</b> (l'ombre du style suit le doigt ou la souris : heure) et le <b>calendrier</b> (jour de l'année). Molette sur un cadran ou sur la date et l'heure du panneau pour avancer pas à pas. <b>Double clic / double appui</b> : sur la boussole, nord en haut ; sur le cadran solaire, heure actuelle ; sur le calendrier, date du jour. <b>Animer</b> fait défiler la journée, <b>Maintenant</b> revient à l'instant présent. Heure locale ou TU : bloc Date et heure.</p>
     <h3>4. Se déplacer</h3>
     <table>
       <tr><td>Souris</td><td>glisser le fond = déplacer · molette = zoom · Maj + glisser ou clic droit + glisser = passer en 3D, pivoter, incliner · clic droit = menu</td></tr>
@@ -361,14 +361,21 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <p id="helpVer2"></p>
     <pre>MIT License
 
-Copyright (c) 2026 Cyrille31
+Copyright (c) 2026 CGExcel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</pre>
-    <p class="hint">Données : © IGN (Géoplateforme) — photographies aériennes, Plan IGN, cadastre (Parcellaire Express), BD TOPO, LiDAR HD, RGE ALTI ; SRTM (NASA) hors de France. Position du soleil : algorithme de la NOAA.</p>
+    <h3>Licences des données</h3>
+    <table>
+      <tr><td>Adresses</td><td>Base Adresse Nationale (BAN), alimentée par les <b>Bases Adresses Locales (BAL)</b> des communes — Licence Ouverte Etalab 2.0. Recherche d'adresse et position : service de géocodage de la Géoplateforme (IGN).</td></tr>
+      <tr><td>Cartes et relief</td><td>© IGN — Géoplateforme : photographies aériennes (BD ORTHO), Plan IGN, cadastre (Parcellaire Express), bâtiments (BD TOPO), LiDAR HD, RGE ALTI, communes (ADMIN EXPRESS) — Licence Ouverte Etalab 2.0.</td></tr>
+      <tr><td>Hors de France</td><td>Relief SRTM (NASA / USGS), domaine public.</td></tr>
+      <tr><td>Soleil</td><td>Position calculée avec l'algorithme de la NOAA.</td></tr>
+    </table>
+    <p class="hint">Licence Ouverte Etalab 2.0 : réutilisation libre, y compris commerciale, à condition de mentionner la source et la date de mise à jour des données.</p>
   </div>
 </div></div>
 <div id="printArea">
@@ -1128,7 +1135,7 @@ function render(ctx, W, H, v, opt = {}) {
     for (let i = 0; i < 4; i++) { ctx.fillStyle = i % 2 ? '#fff' : '#222'; ctx.fillRect(x0 + i * w / 4, y0, w / 4, 6); }
     ctx.strokeStyle = '#222'; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, w, 6);
     ctx.fillStyle = '#222'; ctx.font = '11px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillText('0', x0 - 3, y0 - 4); ctx.fillText(fmtNum(L, L < 1 ? 1 : 0) + ' m' + (scaleOk() ? '' : ' (échelle non définie !)'), x0 + w - 6, y0 - 4);
+    ctx.fillText('0', x0 - 3, y0 - 4); ctx.fillText((L >= 1000 ? fmtNum(L / 1000, 0) + ' km' : fmtNum(L, L < 1 ? 1 : 0) + ' m') + (scaleOk() ? '' : ' (échelle non définie !)'), x0 + w - 6, y0 - 4);
   }
   // en-tête (impression / export)
   if (print) {
@@ -1299,7 +1306,7 @@ cv.addEventListener('wheel', e => {
   if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(evPos(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = evPos(e), f = Math.exp(-normWheel(e) * 0.0015), w = toW(p);
-  V.s = clamp(V.s * f, 0.02, 40); { const c = Math.cos(V.rot), sn = Math.sin(V.rot); V.ox = p.x - V.s * (w.x * c - w.y * sn); V.oy = p.y - V.s * (w.x * sn + w.y * c); } S.dirty = true;
+  V.s = clamp(V.s * f, minScale2D(), 40); { const c = Math.cos(V.rot), sn = Math.sin(V.rot); V.ox = p.x - V.s * (w.x * c - w.y * sn); V.oy = p.y - V.s * (w.x * sn + w.y * c); } S.dirty = true;
 }, { passive: false });
 function finishScale() {
   const { p1, p2 } = S.temp; S.temp = null;
@@ -2498,9 +2505,9 @@ function locateMe(auto) {
 }
 $('btnLocate').onclick = () => locateMe(false);
 /* ------------------------------------------------------------ Mode d'emploi, version, licence */
-const APP_VERSION = '1.0', APP_DATE = 'octobre 2026';
+const APP_VERSION = '1.1', APP_DATE = 'octobre 2026';
 $('helpVer').textContent = 'version ' + APP_VERSION;
-$('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). Logiciel libre sous licence MIT : utilisation, copie, modification et diffusion libres, sans garantie. Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
+$('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). © 2026 CGExcel. Logiciel libre sous licence MIT : utilisation, copie, modification et diffusion libres, sans garantie. Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
 const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
 $('btnHelp').onclick = () => showHelp(true);
 $('helpClose').onclick = () => showHelp(false);
@@ -2849,6 +2856,10 @@ function siteFromSave(st) {
 
 /* ------------------------------------------- Boussole et cadran solaire */
 const isMobile = () => document.body.classList.contains('mobile');
+/** Zoom arrière maximal : avec le relief lointain, toute sa zone (500 × 500 km) doit tenir à l'écran, même sur smartphone. */
+const farSpanM = () => S.farOn && S.far ? 2 * Math.max(...['C', 'F', 'N'].map(k => S.far.bb[k] ? (S.far.bb[k][2] - S.far.bb[k][0]) / 2 : 0)) : 0;
+const minScale2D = () => { const L = farSpanM(); return L ? Math.min(0.02, 0.9 * Math.min(CW, CH) / (L * pxPerM())) : 0.02; };
+const maxDist3D = () => { const L = farSpanM(); return L ? Math.max(1e6, 3.2 * L * pxPerM()) : 1e6; };   // ~3 × la largeur : tout le carré dans le champ, même en portrait
 /** Hauteur réservée en bas de l'écran (smartphone : afficheur date / heure). */
 const bottomInset = () => { if (!isMobile() || dialLayout().wide) return 0; const b = $('clockBox'); return b.hidden ? 0 : b.offsetHeight + 10; };
 function dialLayout(W = CW, H = CH) {
@@ -3074,8 +3085,22 @@ function dialWheel(dir) {
   const k = (m - 720) / st, nk = dir > 0 ? Math.floor(k + 1e-6) + 1 : Math.ceil(k - 1e-6) - 1;
   S.minute = d0 + 720 + nk * st; changed();
 }
+let lastDialTap = null;
 function dialUp(d) {
   if (d.moved) return;
+  { // double appui (ou double clic) : boussole = nord en haut, cadran solaire = heure courante, calendrier = aujourd'hui
+    const now = performance.now(), dbl = lastDialTap && lastDialTap.kind === d.kind && now - lastDialTap.t < 450;
+    lastDialTap = dbl ? null : { kind: d.kind, t: now };
+    if (dbl) {
+      if (d.kind === 'compass') rotateView(null);
+      else {   // instant présent : l'heure seule (cadran solaire) ou la date seule (calendrier)
+        stopPlay();
+        const t = Date.now(), off = S.utcMode ? 0 : S.tzStd + (S.dstAuto && isEUDST(t) ? 1 : 0), loc = t / 6e4 + off * 60, day = Math.floor(loc / 1440);
+        if (d.kind === 'sundial') S.minute = S.minute - mod(S.minute, 1440) + (loc - day * 1440); else S.day = day;
+      }
+      return changed();
+    }
+  }
   const L = dialLayout(), p = { x: d.sx, y: d.sy }, c = d.kind === 'compass' ? [L.cx, L.cy, L.R] : d.kind === 'calendar' ? [L.kx, L.ky, L.R3] : [L.sx, L.sy, L.R];
   const center = Math.hypot(p.x - c[0], p.y - c[1]) < c[2] * 0.22;   // clic au centre : midi (cadran) ou nord en haut (boussole)
   if (d.kind === 'calendar') return dialMove({ ...d, moved: true }, p);
@@ -4545,7 +4570,7 @@ glcv.addEventListener('wheel', e => {
   if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(ev3(e)); if (dk) return dialWheelEvt(dk, e); }
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
-  const nd = clamp(G.cam.dist * f, 5, S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6), k = nd / G.cam.dist;
+  const nd = clamp(G.cam.dist * f, 5, maxDist3D()), k = nd / G.cam.dist;
   if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
   G.cam.dist = nd; S.dirty = true;
 }, { passive: false });
@@ -4608,12 +4633,12 @@ function touchGestures(el, is3d) {
     if (!S.view3d && !g.turn && Math.abs(k - 1) < 0.12 && g.m.y - q.m.y > 40 && Math.abs(q.m.x - g.m.x) < 0.5 * (g.m.y - q.m.y) && enter3D(true)) { g.c3 = { cam: { ...G.cam }, m: q.m, d: q.d, a: q.a }; S.dirty = true; return; }
     if (S.view3d) {
       if (!g.c3) g.c3 = { cam: is3d ? g.cam : { ...G.cam }, m: is3d ? g.m : q.m, d: is3d ? g.d : q.d, a: is3d ? g.a : q.a };
-      const c3 = g.c3, far = S.farOn && S.far ? Math.max(1e6, 400000 * pxPerM()) : 1e6, a3 = g.turn ? Math.atan2(Math.sin(q.a - c3.a), Math.cos(q.a - c3.a)) : 0;
+      const c3 = g.c3, far = maxDist3D(), a3 = g.turn ? Math.atan2(Math.sin(q.a - c3.a), Math.cos(q.a - c3.a)) : 0;
       G.cam.dist = clamp(c3.cam.dist * c3.d / q.d, 5, far);
       G.cam.yaw = mod(c3.cam.yaw - a3 + Math.PI, 2 * Math.PI) - Math.PI;
       G.cam.pitch = clamp(c3.cam.pitch - (q.m.y - c3.m.y) * 0.006, 0, 80 * D2R);
     } else {
-      V.s = clamp(g.s * k, 0.02, 40); V.rot = mod(g.rot + da + Math.PI, 2 * Math.PI) - Math.PI;
+      V.s = clamp(g.s * k, minScale2D(), 40); V.rot = mod(g.rot + da + Math.PI, 2 * Math.PI) - Math.PI;
       const c = Math.cos(V.rot), sn = Math.sin(V.rot), w = g.w;   // le point du plan sous les doigts les suit
       V.ox = q.m.x - V.s * (w.x * c - w.y * sn); V.oy = q.m.y - V.s * (w.x * sn + w.y * c);
     }
