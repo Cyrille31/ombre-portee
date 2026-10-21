@@ -4605,6 +4605,7 @@ function touchGestures(el, is3d) {
     if (touch.pts.size === 1) {   // un doigt : gestes habituels ; immobile 0,55 s = menu local
       const p = pos(e), cx = e.clientX, cy = e.clientY, id = e.pointerId;
       cancelLP();
+      if (dialHit(p)) return;   // cadrans : pas de menu à l'appui long, le doigt posé règle finement
       touch.lp = { p, id, t: setTimeout(() => {
         touch.lp = null; touch.eat.add(id); abort();
         if (navigator.vibrate) navigator.vibrate(12);

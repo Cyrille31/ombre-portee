@@ -25,7 +25,7 @@ Le même fichier fonctionne sur téléphone : ouvrez le lien GitHub Pages (ou le
 | Pincer à deux doigts | Zoom |
 | Tourner à deux doigts | Rotation de la vue |
 | Glisser à deux doigts vers le haut | En 2D : passer en 3D ; en 3D : incliner la vue. Revenir à plat repasse en 2D |
-| Appui long (½ seconde) | Menu local (comme le clic droit) : hauteur d'une construction, couleurs, etc. |
+| Appui long (½ seconde) | Menu local (comme le clic droit) : hauteur d'une construction, couleurs, etc. Pas sur les cadrans : le doigt posé y règle finement l'heure, la date ou l'orientation |
 | Double appui sur l'immeuble | Afficher ses poignées |
 | Double appui sur un cadran | Boussole : nord en haut · cadran solaire : heure actuelle · calendrier : date du jour (double clic à la souris) |
 
