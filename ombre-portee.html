@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ombre portée</title>
+<!-- CGExcel — Cyrille Gindre — © 2026 · Licence MIT + BAL 1.0 — Bonne Action License.
+     En échange, une seule chose vous est demandée, sur l'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c'est vous qui voyez. -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'> <rect width='256' height='256' rx='56' fill='%23fdf6e3'/> <g stroke='%23d9cfb8' stroke-width='3' fill='none'> <path d='M0 176H256M92 0V256M196 176V256M0 72H92'/> </g> <g fill='%23f5b301'><circle cx='58' cy='58' r='24'/> <g stroke='%23f5b301' stroke-width='7' stroke-linecap='round'> <path d='M58 18v-6M58 104v-6M18 58h-6M104 58h-6M30 30l-5-5M86 86l5 5M30 86l-5 5M86 30l5-5'/></g></g> <path d='M120 112 L176 112 L236 210 L236 236 L180 236 L120 168 Z' fill='%231e2440' opacity='.55'/> <rect x='120' y='112' width='56' height='56' rx='6' fill='%232563eb'/> <rect x='120' y='112' width='56' height='56' rx='6' fill='none' stroke='%230b2fa8' stroke-width='4'/> </svg>">
 <style>
 :root{
@@ -363,13 +365,19 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <p id="helpVer2"></p>
     <pre>MIT License
 
-Copyright (c) 2026 CGExcel
+Copyright (c) 2026 Cyrille Gindre — CGExcel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.</pre>
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+BAL 1.0 — Bonne Action License
+
+En complément de la licence MIT ci-dessus, l'utilisateur de ce logiciel est invité, sur l'honneur, à faire une bonne action chaque jour. Cet engagement est moral et n'a aucune portée juridique : il ne restreint en rien les droits accordés par la licence MIT.
+---</pre>
     <h3>Licences des données</h3>
     <table>
       <tr><td>Adresses</td><td>Base Adresse Nationale (BAN), alimentée par les <b>Bases Adresses Locales (BAL)</b> des communes — Licence Ouverte Etalab 2.0. Recherche d'adresse et position : service de géocodage de la Géoplateforme (IGN).</td></tr>
@@ -402,6 +410,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 'use strict';
 /* ====================================================================
    Ombre portée — simulation de l'ombre d'un immeuble sur un plan cadastral
+   CGExcel — Cyrille Gindre — © 2026
+   Licence MIT + BAL 1.0 — Bonne Action License
+   En échange, une seule chose vous est demandée, sur l'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c'est vous qui voyez.
    ==================================================================== */
 const $ = id => document.getElementById(id);
 const D2R = Math.PI / 180, R2D = 180 / Math.PI;
@@ -2525,7 +2536,7 @@ $('btnLocate').onclick = () => locateMe(false);
 /* ------------------------------------------------------------ Mode d'emploi, version, licence */
 const APP_VERSION = '1.2', APP_DATE = 'octobre 2026';
 $('helpVer').textContent = 'version ' + APP_VERSION;
-$('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). © 2026 CGExcel. Logiciel libre sous licence MIT : utilisation, copie, modification et diffusion libres, sans garantie. Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
+$('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). CGExcel — Cyrille Gindre — © 2026.<br><b>Licence MIT + BAL 1.0 — Bonne Action License</b> : utilisation, copie, modification et diffusion libres, sans garantie. En échange, une seule chose vous est demandée, sur l\'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c\'est vous qui voyez.<br>Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
 const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
 $('btnHelp').onclick = () => showHelp(true);
 $('helpClose').onclick = () => showHelp(false);

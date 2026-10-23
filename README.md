@@ -6,7 +6,7 @@ Simulation de l'ombre portée d'un futur immeuble sur un plan cadastral.
 
 ## Lancement
 
-Le bouton **❓ Mode d'emploi** (barre du haut) résume l'utilisation et indique la **version** du logiciel, sa **licence** (MIT, © 2026 CGExcel, voir `LICENSE`) et celles des données : adresses de la Base Adresse Nationale et des Bases Adresses Locales (BAL), données IGN, toutes sous Licence Ouverte Etalab 2.0.
+Le bouton **❓ Mode d'emploi** (barre du haut) résume l'utilisation et indique la **version** du logiciel, sa **licence** (Licence MIT + BAL 1.0 — Bonne Action License, voir la section Licence ci-dessous) et celles des données : adresses de la Base Adresse Nationale et des Bases Adresses Locales (BAL), données IGN, toutes sous Licence Ouverte Etalab 2.0.
 
 Aucune installation : double-cliquez sur **`ombre-portee.html`**. Le fichier s'ouvre dans votre navigateur (Chrome, Edge ou Firefox, sur PC).
 L'application fonctionne hors ligne. Internet n'est nécessaire que pour ouvrir un PDF et pour lire automatiquement la longueur de l'échelle.
@@ -133,3 +133,11 @@ Si une erreur se produit, une fenêtre l'indique et le logiciel continue de fonc
 
 La position du soleil suit l'algorithme de la NOAA, avec correction de la réfraction atmosphérique. La précision est d'environ 0,01° sur la période 1950-2050.
 Le sol est supposé horizontal. En 2D, l'ombre est la projection du parallélépipède de l'immeuble sur le sol. En 3D (WebGL, sans connexion Internet), les ombres sont calculées par carte d'ombre : elles tombent aussi sur les constructions voisines, qui projettent elles-mêmes leur ombre. 
+
+## Licence
+
+**Licence MIT + BAL 1.0 — Bonne Action License** — voir le fichier `LICENSE`.
+
+En échange, une seule chose vous est demandée, sur l'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c'est vous qui voyez.
+
+CGExcel — Cyrille Gindre — © 2026
