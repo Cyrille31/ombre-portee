@@ -72,6 +72,9 @@ Clic droit (appui long sur smartphone) sur le sol ou sur un bâtiment → **👁
 - **Zoom** : molette, ou pincer à deux doigts. La fenêtre indique le champ de vision et la focale équivalente.
 - **Petite fenêtre en haut à gauche** : altitude du point (altitude NGF sur un site IGN) et hauteur des yeux, modifiables au clavier ou à la molette ; boutons **Nord**, **Horizon**, **Zoom normal** et **Quitter** (ou Échap).
 - **Pendant ce temps**, la date, l'heure, les ombres, les immeubles et les panneaux restent réglables.
+- **La fenêtre se replie** dès qu'on touche ou clique la vue : il ne reste que **✕ Quitter la vue**, et ⚙ pour la rouvrir.
+- **Le soleil** est dessiné dans le ciel à sa vraie place et à sa vraie taille, avec un halo. Il n'apparaît pas s'il est caché par un bâtiment, un arbre ou le relief, vu depuis les yeux de la personne. La boussole tourne avec le regard.
+- **📱 Mode capteurs** (smartphone, bouton dans la fenêtre) : la vue suit l'orientation du téléphone tenu devant soi, avec la boussole pour la direction et l'accéléromètre pour l'inclinaison. On garde le pincement pour zoomer. Il faut ouvrir la page en https (lien GitHub Pages) ; sur iPhone, le téléphone demande l'autorisation.
 
 Si le LiDAR voit de la végétation basse ou des objets (stands, véhicules…) autour du point, un message le signale. Décochez « Arbres » s'ils masquent la vue.
 

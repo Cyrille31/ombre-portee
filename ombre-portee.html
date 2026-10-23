@@ -80,6 +80,9 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #fpBox .t{display:flex;align-items:center;gap:6px;font-weight:600;margin:0 -10px 6px;padding:6px 10px;background:#f3f5f9;border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
 #fpBox .f .lbl{width:120px}
 #fpBox input[type=text]{width:72px}
+#fpMini{position:absolute;z-index:6;left:8px;top:8px;display:flex;gap:4px}
+#fpMini button{box-shadow:0 2px 8px rgba(0,0,0,.2)}
+#fpSens.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 #netBusy{display:inline-flex;align-items:center;flex:none}
 #netBusy[hidden]{display:none}
 #netBusy .hh{transform-origin:12px 12px;animation:clockspin 1s linear infinite}
@@ -327,8 +330,10 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
   <div class="f"><span class="lbl drag" data-for="fpEye">Hauteur des yeux</span><input type="text" id="fpEye"><span class="u">m</span></div>
   <div id="fpInfo" class="hint"></div>
   <div class="row"><button id="fpNorth" class="small">Nord</button><button id="fpLevel" class="small">Horizon</button><button id="fpWide" class="small">Zoom normal</button></div>
-  <div class="hint aide">Glisser : tourner la tête (droite, gauche, haut, bas) · molette ou pincer : zoom.</div>
+  <div class="row" id="fpSensRow" hidden><button id="fpSens" class="small" title="La vue suit l'orientation du téléphone (boussole et inclinaison)">📱 Mode capteurs</button></div>
+  <div class="hint aide">Glisser : tourner la tête (droite, gauche, haut, bas) · molette ou pincer : zoom. Toucher la vue replie cette fenêtre.</div>
 </div>
+<div id="fpMini" hidden><button id="fpMiniQuit" title="Quitter la vue d'une personne">✕ Quitter la vue</button><button id="fpMiniSet" class="small" title="Réglages de la vue (altitude, hauteur des yeux, capteurs)">⚙</button></div>
 <canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas>
     <div id="clockBox" hidden>
       <div id="cbDate"></div><div id="cbTime"></div>
@@ -361,7 +366,7 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <h3>Panneaux solaires</h3>
     <p>Clic droit (appui long) sur le sol ou sur un toit → <b>☀ Panneau solaire ici</b> : un panneau courant (1,72 × 1,13 m, rendement 22 %) est posé. Sur un toit en pente, il en prend la pente et l'orientation ; sur un toit plat ou au sol, il est orienté et incliné au mieux (sur un toit plat, parallèlement au bord le plus favorable), sans déborder du toit si possible. Sa production instantanée (ciel clair, ombres comprises) s'affiche dessus. Glissez-le, redimensionnez-le ou tournez-le avec ses poignées. Clic droit sur le panneau : longueur, largeur, inclinaison, orientation, hauteur du bas au-dessus du support, rendement, et <b>📊 Statistiques</b> (production annuelle et mensuelle, moyenne et crête en W et W/m², pertes par les ombres).</p>
     <h3>Vue d'une personne</h3>
-    <p>Clic droit (appui long) sur le sol ou sur un bâtiment → <b>👁 Vue d'une personne ici</b> : la vue 3D se place à l'endroit choisi, les yeux à 1,70 m au-dessus du sol ou du toit. Glissez pour tourner la tête (droite, gauche, haut, bas), molette ou pincement pour zoomer. La petite fenêtre en haut à gauche permet de changer l'altitude du point et la hauteur des yeux, de revenir au nord, à l'horizon ou au zoom normal ; « Quitter » ou Échap pour revenir à la vue 3D habituelle. Les ombres, l'heure et la date restent réglables pendant ce temps.</p>
+    <p>Clic droit (appui long) sur le sol ou sur un bâtiment → <b>👁 Vue d'une personne ici</b> : la vue 3D se place à l'endroit choisi, les yeux à 1,70 m au-dessus du sol ou du toit. Glissez pour tourner la tête (droite, gauche, haut, bas), molette ou pincement pour zoomer. La petite fenêtre en haut à gauche permet de changer l'altitude du point et la hauteur des yeux, de revenir au nord, à l'horizon ou au zoom normal ; elle se replie dès qu'on touche la vue, ne laissant que « ✕ Quitter la vue » (et ⚙ pour la rouvrir). Le <b>soleil</b> est dessiné dans le ciel, sauf s'il est caché par un bâtiment, un arbre ou le relief ; la boussole tourne avec le regard. Sur smartphone, <b>📱 Mode capteurs</b> : la vue suit l'orientation du téléphone tenu devant soi. Échap ou « Quitter » pour revenir à la vue 3D habituelle. Les ombres, l'heure et la date restent réglables pendant ce temps.</p>
     <h3>3. Choisir le jour et l'heure</h3>
     <p>Les trois cadrans : la <b>boussole</b> (tourne la vue), le <b>cadran solaire</b> (l'ombre du style suit le doigt ou la souris : heure) et le <b>calendrier</b> (jour de l'année). Molette sur un cadran ou sur la date et l'heure du panneau pour avancer pas à pas. <b>Double clic / double appui</b> : sur la boussole, nord en haut ; sur le cadran solaire, heure actuelle ; sur le calendrier, date du jour. <b>Animer</b> fait défiler la journée, <b>Maintenant</b> revient à l'instant présent. Heure locale ou TU : bloc Date et heure.</p>
     <h3>4. Se déplacer</h3>
@@ -2550,7 +2555,7 @@ function locateMe(auto) {
 }
 $('btnLocate').onclick = () => locateMe(false);
 /* ------------------------------------------------------------ Mode d'emploi, version, licence */
-const APP_VERSION = '1.3', APP_DATE = 'octobre 2026';
+const APP_VERSION = '1.4', APP_DATE = 'octobre 2026';
 $('helpVer').textContent = 'version ' + APP_VERSION;
 $('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). CGExcel — Cyrille Gindre — © 2026.<br><b>Licence MIT + BAL 1.0 — Bonne Action License</b> : utilisation, copie, modification et diffusion libres, sans garantie. En échange, une seule chose vous est demandée, sur l\'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c\'est vous qui voyez.<br>Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
 const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
@@ -2566,16 +2571,18 @@ function fpEnter(x, y) {
   if (!enter3D()) return;
   G.fp = { x, y, z: surfaceAt(x, y).z, eye: 1.7, yaw, pitch: 0, fov: 60 };
   S.editB = false; S.editP = false; closeMenu();
-  $('fpBox').hidden = false; fpSync(); S.dirty = true;
+  $('fpBox').hidden = false; $('fpMini').hidden = true; $('fpSensRow').hidden = !('DeviceOrientationEvent' in window) || !(isMobile() || matchMedia('(pointer: coarse)').matches); fpSync(); S.dirty = true;
   let vh = 0; const V = S.veg;   // végétation basse du LiDAR au point : elle peut masquer la vue
   if (V && V.h && S.showTrees) { const ppm = pxPerM(); for (let a = 0; a < 8; a++) { const X = x + Math.cos(a) * 2 * ppm, Y = y + Math.sin(a) * 2 * ppm, i = Math.floor(X / ppm / V.cell), j = Math.floor(Y / ppm / V.cell); if (i >= 0 && j >= 0 && i < V.nx && j < V.ny) vh = Math.max(vh, V.h[j * V.nx + i]); } }
   status('Vue d\'une personne : glisser pour tourner la tête, molette (ou pincer) pour zoomer ; Échap ou « Quitter » pour revenir.' +
     (vh > 1 && G.fp.eye < vh + 0.5 ? ' Le LiDAR voit ici une végétation ou des objets de ' + fmtNum(vh, 1) + ' m (haies, stands, véhicules…) : décochez « Arbres » s\'ils masquent la vue.' : ''), true);
 }
-function fpExit() { G.fp = null; $('fpBox').hidden = true; S.dirty = true; changed(); }
+function fpExit() { fpSensors(false); G.fp = null; $('fpBox').hidden = true; $('fpMini').hidden = true; S.dirty = true; changed(); }
+const fpFold = fold => { if (!G.fp) return; $('fpBox').hidden = fold; $('fpMini').hidden = !fold; fpSync(); };
+glcv.addEventListener('pointerdown', () => { if (G.fp && !$('fpBox').hidden) fpFold(true); }, true);
 function fpSync() {
   const f = G.fp; if (!f) return;
-  const box = $('fpBox'); box.style.top = (isMobile() ? dialLayout().rect.h + 4 : 8) + 'px';
+  const box = $('fpBox'), top = (isMobile() ? dialLayout().rect.h + 4 : 8) + 'px'; box.style.top = top; $('fpMini').style.top = top;
   if (document.activeElement !== $('fpAlt')) $('fpAlt').value = fmtNum(f.z + zRef(), 2);
   if (document.activeElement !== $('fpEye')) $('fpEye').value = fmtNum(f.eye, 2);
   const card = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'], az = mod((f.yaw - S.north * D2R) * R2D, 360);
@@ -2588,6 +2595,32 @@ $('fpAlt').addEventListener('change', e => { const v = parseNum(e.target.value);
 $('fpEye').addEventListener('change', e => { const v = parseNum(e.target.value); if (G.fp && isFinite(v)) { G.fp.eye = clamp(v, 0, 500); S.dirty = true; } fpSync(); e.target.blur(); });
 for (const id of ['fpAlt', 'fpEye']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); e.stopPropagation(); });
 $('fpQuit').onclick = () => { fpExit(); };
+$('fpMiniQuit').onclick = () => { fpExit(); };
+$('fpMiniSet').onclick = () => fpFold(false);
+/* --- mode capteurs : la vue suit l'orientation du téléphone (regard = dos du téléphone) */
+let fpSens = null;
+function fpOrient(e) {
+  if (!G.fp || !fpSens) return;
+  let a = e.alpha, b = e.beta, g = e.gamma; if (a === null || b === null || g === null) return;
+  if (e.webkitCompassHeading !== undefined && !e.absolute) a = 360 - e.webkitCompassHeading;   // iPhone : cap fourni à part
+  else if (e.type === 'deviceorientation' && !e.absolute && fpSens.abs) return;               // Android : on garde l'événement absolu
+  const cz = Math.cos(a * D2R), sz = Math.sin(a * D2R), cx = Math.cos(b * D2R), sx = Math.sin(b * D2R), cy = Math.cos(g * D2R), sy = Math.sin(g * D2R);
+  const vE = -(cz * sy + sz * sx * cy), vN = -(sz * sy - cz * sx * cy), vU = -cx * cy;   // axe −z du téléphone dans le repère est, nord, haut
+  const az = Math.atan2(vE, vN), pitch = Math.asin(clamp(vU, -1, 1)), yaw = S.north * D2R + az;
+  const k = 0.35, dy = Math.atan2(Math.sin(yaw - G.fp.yaw), Math.cos(yaw - G.fp.yaw));   // lissage
+  G.fp.yaw = mod(G.fp.yaw + k * dy + Math.PI, 2 * Math.PI) - Math.PI; G.fp.pitch = clamp(G.fp.pitch + k * (pitch - G.fp.pitch), -85 * D2R, 85 * D2R);
+  S.dirty = true;
+}
+async function fpSensors(on) {
+  if (!on) { if (fpSens) { removeEventListener('deviceorientationabsolute', fpOrient); removeEventListener('deviceorientation', fpOrient); } fpSens = null; $('fpSens').classList.remove('on'); return; }
+  try { if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission && await DeviceOrientationEvent.requestPermission() !== 'granted') throw new Error('autorisation refusée'); }
+  catch (e) { status('Capteurs d\'orientation indisponibles : ' + e.message, true); return; }
+  fpSens = { abs: 'ondeviceorientationabsolute' in window };
+  addEventListener('deviceorientationabsolute', fpOrient); addEventListener('deviceorientation', fpOrient);
+  $('fpSens').classList.add('on'); fpFold(true);
+  status('Mode capteurs : tenez le téléphone devant vous, la vue suit sa direction et son inclinaison. Pincer pour zoomer.', true);
+}
+$('fpSens').onclick = () => fpSensors(!fpSens);
 $('fpNorth').onclick = () => { if (G.fp) { G.fp.yaw = S.north * D2R; fpSync(); S.dirty = true; } };
 $('fpLevel').onclick = () => { if (G.fp) { G.fp.pitch = 0; fpSync(); S.dirty = true; } };
 $('fpWide').onclick = () => { if (G.fp) { G.fp.fov = 60; fpSync(); S.dirty = true; } };
@@ -4325,6 +4358,21 @@ function camInfo(cw = CW, ch = CH) {
   const VP = m4mul(m4persp(G.fov, cw / ch, Math.max(0.5, c.dist * 0.01), Math.max(c.dist * 8 + ext * 4, farE)), m4look(eye, target, up));
   return { eye, target, up, VP };
 }
+/** Soleil dans la vue 3D : disque à sa taille réelle (au moins 7 px) et halo ; masqué par ce qui le cache depuis l'œil. */
+function drawSun3d(ctx, ci, sun) {
+  if (!sun || sun.alt < -0.8 || farHidden(sun)) return;
+  const L = sunVec(sun), q = toScreen3(ci.VP, v3.add(ci.eye, v3.mul(L, 1e7))); if (!q || q.x < -80 || q.y < -80 || q.x > CW + 80 || q.y > CH + 80) return;
+  let lit = 1;
+  if (S.clean) { const ppm = pxPerM(), x = ci.eye[0], y = ci.eye[2]; if (x >= 0 && y >= 0 && x <= S.clean.width && y <= S.clean.height) lit = sunLit(x, y, ci.eye[1] / ppm, pvRayCtx(sun)); }
+  if (lit <= 0.02) return;
+  const r = Math.max(7, Math.tan(0.267 * D2R) / Math.tan(fovNow() / 2) * CH / 2), low = clamp(sun.alt / 8, 0, 1);
+  const core = `rgba(255,${Math.round(200 + 50 * low)},${Math.round(120 + 110 * low)},${lit})`;
+  ctx.save();
+  const g = ctx.createRadialGradient(q.x, q.y, r * 0.6, q.x, q.y, r * 5); g.addColorStop(0, `rgba(255,236,170,${0.55 * lit})`); g.addColorStop(1, 'rgba(255,236,170,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q.x, q.y, r * 5, 0, 7); ctx.fill();
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 7); ctx.fill();
+  ctx.restore();
+}
 function sunVec(sun) {
   const { N, E } = northVecs(), a = sun.az * D2R, h = sun.alt * D2R;
   const dx = N.x * Math.cos(a) + E.x * Math.sin(a), dy = N.y * Math.cos(a) + E.y * Math.sin(a);
@@ -4429,6 +4477,7 @@ function toScreen3(VP, p, cw = CW, ch = CH) {
 function overlay3d(ci, sun, ctx = octx, k = DPR) {
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, CW, CH);
   if (G.fp && ctx === octx) fpSync();
+  drawSun3d(ctx, ci, sun);
   const ppm = pxPerM(), P = new Placer(CW, CH);
   P.add(dialLayout().rect);
   ctx.font = 'bold 12px system-ui, sans-serif';
@@ -4454,6 +4503,7 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
   const o = toScreen3(ci.VP, ci.target);
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
   let nx = 0, ny = -1; if (o && nq) { const l = Math.hypot(nq.x - o.x, nq.y - o.y); if (l > 1e-6) { nx = (nq.x - o.x) / l; ny = (nq.y - o.y) / l; } }
+  if (G.fp) { const a = G.fp.yaw - S.north * D2R; nx = -Math.sin(a); ny = -Math.cos(a); }   // vue d'une personne : le haut de la boussole est le regard
   drawDials(ctx, CW, CH, { x: nx, y: ny }, sun);
   const yH = CH - 16 - (ctx === octx ? bottomInset() : 0), tH = G.fp ? 'Vue d\'une personne — glisser : tourner la tête · ' + (isMobile() ? 'pincer' : 'molette') + ' : zoom' : isMobile() ? 'Vue 3D — 2 doigts : pincer, tourner, glisser = incliner' : 'Vue 3D — Maj + glisser : pivoter / incliner';
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, yH - 10, ctx.measureText(tH).width + 14, 20); ctx.fillStyle = '#334';
@@ -4618,6 +4668,7 @@ glcv.addEventListener('pointermove', e => {
     if (drag3.right && !drag3.moved && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 6) return;
     if (!drag3.moved) closePop();
     drag3.moved = true;
+    if (G.fp && fpSens) return;   // mode capteurs : le téléphone commande le regard
     if (G.fp) {   // on « attrape » le paysage : glisser à droite tourne le regard vers la gauche
       const k = G.fp.fov * D2R / Math.max(CH, 1);
       G.fp.yaw = mod(G.fp.yaw - dx * k + Math.PI, 2 * Math.PI) - Math.PI; G.fp.pitch = clamp(G.fp.pitch + dy * k, -85 * D2R, 85 * D2R);
@@ -5070,7 +5121,7 @@ function touchGestures(el, is3d) {
     if (!S.view3d && !g.turn && Math.abs(k - 1) < 0.12 && g.m.y - q.m.y > 40 && Math.abs(q.m.x - g.m.x) < 0.5 * (g.m.y - q.m.y) && enter3D(true)) { g.c3 = { cam: { ...G.cam }, m: q.m, d: q.d, a: q.a }; S.dirty = true; return; }
     if (S.view3d) {
       if (!g.c3) g.c3 = { cam: is3d ? g.cam : { ...G.cam }, m: is3d ? g.m : q.m, d: is3d ? g.d : q.d, a: is3d ? g.a : q.a, fp: G.fp ? { ...G.fp } : null };
-      if (G.fp && g.c3.fp) { G.fp.fov = clamp(g.c3.fp.fov * g.c3.d / q.d, 4, 110); G.fp.pitch = clamp(g.c3.fp.pitch + (q.m.y - g.c3.m.y) * G.fp.fov * D2R / CH, -85 * D2R, 85 * D2R); S.dirty = true; fpSync(); return; }
+      if (G.fp && g.c3.fp) { G.fp.fov = clamp(g.c3.fp.fov * g.c3.d / q.d, 4, 110); if (!fpSens) G.fp.pitch = clamp(g.c3.fp.pitch + (q.m.y - g.c3.m.y) * G.fp.fov * D2R / CH, -85 * D2R, 85 * D2R); S.dirty = true; fpSync(); return; }
       const c3 = g.c3, far = maxDist3D(), a3 = g.turn ? Math.atan2(Math.sin(q.a - c3.a), Math.cos(q.a - c3.a)) : 0;
       G.cam.dist = clamp(c3.cam.dist * c3.d / q.d, 5, far);
       G.cam.yaw = mod(c3.cam.yaw - a3 + Math.PI, 2 * Math.PI) - Math.PI;
