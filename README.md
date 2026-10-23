@@ -64,6 +64,17 @@ Le calcul est une estimation, à environ ±15 % près. Le rayonnement par ciel c
 
 Un nouvel immeuble mesure 18 m de haut au départ.
 
+### Vue d'une personne
+
+Clic droit (appui long sur smartphone) sur le sol ou sur un bâtiment → **👁 Vue d'une personne ici**. La vue 3D montre alors ce que voit une personne à cet endroit, les yeux à 1,70 m au-dessus du sol ou du toit.
+
+- **Tourner la tête** : glisser à la souris ou au doigt (droite, gauche, haut, bas). La boussole tourne avec le regard.
+- **Zoom** : molette, ou pincer à deux doigts. La fenêtre indique le champ de vision et la focale équivalente.
+- **Petite fenêtre en haut à gauche** : altitude du point (altitude NGF sur un site IGN) et hauteur des yeux, modifiables au clavier ou à la molette ; boutons **Nord**, **Horizon**, **Zoom normal** et **Quitter** (ou Échap).
+- **Pendant ce temps**, la date, l'heure, les ombres, les immeubles et les panneaux restent réglables.
+
+Si le LiDAR voit de la végétation basse ou des objets (stands, véhicules…) autour du point, un message le signale. Décochez « Arbres » s'ils masquent la vue.
+
 ### Relief lointain
 
 La case **Relief lointain** (décochée au lancement) télécharge, autour de l'adresse du site, le relief à 100 m sur 50 km et à 1 km jusqu'à 250 km (RGE ALTI en France, SRTM au-delà : Pyrénées espagnoles et Alpes comprises), avec la photo (et les noms des villes : plus de 5 000 habitants à moins de 25 km, plus de 40 000 au-delà) ou le plan IGN selon la case « Photo ». Sur 5 km autour du plan, l'image est bien plus fine (environ 2,7 m par pixel, relief à la maille de 100 m). Comptez une quinzaine de secondes ; changer de fond télécharge l'autre jeu d'images à la demande. « Zone de » ne règle que la carte de travail, qui reste précise (bâtiments, LiDAR).

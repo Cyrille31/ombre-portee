@@ -76,6 +76,10 @@ input.big{font-size:18px;font-weight:600;width:90px}
 #status{padding:4px 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);min-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #status.msg{color:var(--text)}
 #printArea{display:none}
+#fpBox{position:absolute;z-index:6;left:8px;top:8px;width:250px;background:rgba(255,255,255,.95);border:1px solid #9aa7bd;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.15);padding:0 10px 8px}
+#fpBox .t{display:flex;align-items:center;gap:6px;font-weight:600;margin:0 -10px 6px;padding:6px 10px;background:#f3f5f9;border-bottom:1px solid var(--line);border-radius:10px 10px 0 0}
+#fpBox .f .lbl{width:120px}
+#fpBox input[type=text]{width:72px}
 #netBusy{display:inline-flex;align-items:center;flex:none}
 #netBusy[hidden]{display:none}
 #netBusy .hh{transform-origin:12px 12px;animation:clockspin 1s linear infinite}
@@ -316,7 +320,16 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <div class="seg" title="Vue 3D : Maj + glisser sur le plan pour pivoter / incliner"><button id="v2d" class="on">2D</button><button id="v3d">3D</button></div>
     <button id="btnTop" disabled title="Revenir à une vue de dessus, nord en haut">Vue de dessus</button>
   </div>
-  <div id="stage"><canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas>
+  <div id="stage">
+    <div id="fpBox" hidden>
+  <div class="t">👁 Vue d'une personne <button id="fpQuit" class="small" style="margin-left:auto">Quitter</button></div>
+  <div class="f"><span class="lbl drag" data-for="fpAlt">Altitude du point</span><input type="text" id="fpAlt"><span class="u">m</span></div>
+  <div class="f"><span class="lbl drag" data-for="fpEye">Hauteur des yeux</span><input type="text" id="fpEye"><span class="u">m</span></div>
+  <div id="fpInfo" class="hint"></div>
+  <div class="row"><button id="fpNorth" class="small">Nord</button><button id="fpLevel" class="small">Horizon</button><button id="fpWide" class="small">Zoom normal</button></div>
+  <div class="hint aide">Glisser : tourner la tête (droite, gauche, haut, bas) · molette ou pincer : zoom.</div>
+</div>
+<canvas id="cv"></canvas><canvas id="gl" hidden></canvas><canvas id="ov" hidden></canvas>
     <div id="clockBox" hidden>
       <div id="cbDate"></div><div id="cbTime"></div>
       <div class="row" style="justify-content:center;gap:4px;margin:6px 0 0">
@@ -347,6 +360,8 @@ body.mobile .pop{max-height:calc(100dvh - 16px);overflow-y:auto;width:min(300px,
     <p><b>+ Immeuble</b> (bloc Immeuble) pose un immeuble de 20 × 12 m au centre de la vue ; ou clic droit / appui long sur le plan → <b>Ajouter un immeuble ici</b>, ou <b>Dessiner un immeuble</b>. Glissez-le pour le déplacer, ses poignées carrées pour le redimensionner, la ronde pour le pivoter. Hauteur, dimensions, couleurs, façade et forme du toit : bloc Immeuble ou clic droit sur l'immeuble.</p>
     <h3>Panneaux solaires</h3>
     <p>Clic droit (appui long) sur le sol ou sur un toit → <b>☀ Panneau solaire ici</b> : un panneau courant (1,72 × 1,13 m, rendement 22 %) est posé. Sur un toit en pente, il en prend la pente et l'orientation ; sur un toit plat ou au sol, il est orienté et incliné au mieux (sur un toit plat, parallèlement au bord le plus favorable), sans déborder du toit si possible. Sa production instantanée (ciel clair, ombres comprises) s'affiche dessus. Glissez-le, redimensionnez-le ou tournez-le avec ses poignées. Clic droit sur le panneau : longueur, largeur, inclinaison, orientation, hauteur du bas au-dessus du support, rendement, et <b>📊 Statistiques</b> (production annuelle et mensuelle, moyenne et crête en W et W/m², pertes par les ombres).</p>
+    <h3>Vue d'une personne</h3>
+    <p>Clic droit (appui long) sur le sol ou sur un bâtiment → <b>👁 Vue d'une personne ici</b> : la vue 3D se place à l'endroit choisi, les yeux à 1,70 m au-dessus du sol ou du toit. Glissez pour tourner la tête (droite, gauche, haut, bas), molette ou pincement pour zoomer. La petite fenêtre en haut à gauche permet de changer l'altitude du point et la hauteur des yeux, de revenir au nord, à l'horizon ou au zoom normal ; « Quitter » ou Échap pour revenir à la vue 3D habituelle. Les ombres, l'heure et la date restent réglables pendant ce temps.</p>
     <h3>3. Choisir le jour et l'heure</h3>
     <p>Les trois cadrans : la <b>boussole</b> (tourne la vue), le <b>cadran solaire</b> (l'ombre du style suit le doigt ou la souris : heure) et le <b>calendrier</b> (jour de l'année). Molette sur un cadran ou sur la date et l'heure du panneau pour avancer pas à pas. <b>Double clic / double appui</b> : sur la boussole, nord en haut ; sur le cadran solaire, heure actuelle ; sur le calendrier, date du jour. <b>Animer</b> fait défiler la journée, <b>Maintenant</b> revient à l'instant présent. Heure locale ou TU : bloc Date et heure.</p>
     <h3>4. Se déplacer</h3>
@@ -2022,7 +2037,7 @@ function menuNb(c, cx, cy) {
     m.sep();
     if (c.h0 !== undefined && c.h0 !== null) m.button('Hauteur d\'origine (' + fmtLen(c.h0) + ' m)', () => { c.h = c.h0; S.hVer++; closePop(); });
     m.button('Supprimer la hauteur', () => { delete c.h; S.hVer++; closePop(); });
-    if (lastCtxW) { const w = lastCtxW; m.button('☀ Panneau solaire ici', () => { closePop(); addPanelAt(w.x, w.y); }); }
+    if (lastCtxW) { const w = lastCtxW; m.button('☀ Panneau solaire ici', () => { closePop(); addPanelAt(w.x, w.y); }); m.button('👁 Vue d\'une personne ici', () => { closePop(); fpEnter(w.x, w.y); }); }
   });
 }
 function menuProj(b, part, cx, cy) {
@@ -2035,7 +2050,7 @@ function menuProj(b, part, cx, cy) {
     m.sep(); m.button('Modifier la forme', () => { S.editB = true; closePop(); });
     m.button(S.roofEdit === b.id ? 'Terminer l\'édition du toit' : 'Éditeur de toit', () => { closePop(); if (S.roofEdit === b.id) roofEditStop(); else roofEditStart(b); });
     m.button('Supprimer', () => { closePop(); $('btnDelB').onclick(); });
-    if (lastCtxW) { const w = lastCtxW; m.button('☀ Panneau solaire ici', () => { closePop(); addPanelAt(w.x, w.y); }); }
+    if (lastCtxW) { const w = lastCtxW; m.button('☀ Panneau solaire ici', () => { closePop(); addPanelAt(w.x, w.y); }); m.button('👁 Vue d\'une personne ici', () => { closePop(); fpEnter(w.x, w.y); }); }
   });
 }
 function menuBg(cx, cy, P, FP) {
@@ -2045,6 +2060,7 @@ function menuBg(cx, cy, P, FP) {
       m.button('📍 Nouvelle zone de travail ici (' + $('siteSize').value + ' m)', () => { closePop(); newZoneAt(X, Y); });
       m.hint('Remplace la zone actuelle par une zone de la taille choisie dans « Zone de » (bloc Site), centrée sur ce point. Les immeubles ajoutés suivent si possible.'); m.sep(); }
     if (P) m.button('☀ Panneau solaire ici', () => { closePop(); addPanelAt(P.x, P.y); });
+    if (P) m.button('👁 Vue d\'une personne ici', () => { closePop(); fpEnter(P.x, P.y); });
     m.button('🏢 Dessiner un nouvel immeuble', () => { closePop(); if (S.view3d) exit3D(); setMode('draw'); status('Nouvel immeuble : glisser sur le plan pour tracer son rectangle.', true); });
     if (P) m.button('📏 Règle depuis ce point', () => { S.ruler = { a: P, b: P, live: true }; closePop(); status('Règle : déplacez la souris, clic gauche pour la fixer ; un nouveau clic l\'efface.', true); });
     m.range('Luminosité', () => S.bright, v => S.bright = v, -60, 150, 5, v => (v > 0 ? '+' : '') + v + ' %');
@@ -2534,13 +2550,47 @@ function locateMe(auto) {
 }
 $('btnLocate').onclick = () => locateMe(false);
 /* ------------------------------------------------------------ Mode d'emploi, version, licence */
-const APP_VERSION = '1.2', APP_DATE = 'octobre 2026';
+const APP_VERSION = '1.3', APP_DATE = 'octobre 2026';
 $('helpVer').textContent = 'version ' + APP_VERSION;
 $('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). CGExcel — Cyrille Gindre — © 2026.<br><b>Licence MIT + BAL 1.0 — Bonne Action License</b> : utilisation, copie, modification et diffusion libres, sans garantie. En échange, une seule chose vous est demandée, sur l\'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c\'est vous qui voyez.<br>Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
 const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
 $('btnHelp').onclick = () => showHelp(true);
 $('helpClose').onclick = () => showHelp(false);
 $('pvClose').onclick = () => { $('pvShade').hidden = true; };
+/* ------------------------------------------------------------ Vue d'une personne */
+// G.fp = { x, y (px), z (m : altitude du point, même référence que le relief), eye (m : hauteur des yeux), yaw, pitch (rad), fov (°) }
+const zRef = () => S.terrain ? S.terrain.z0 : 0;   // altitude absolue (NGF) du zéro des hauteurs
+function fpEnter(x, y) {
+  if (!S.clean) return;
+  const yaw = S.view3d ? G.cam.yaw : -V.rot;
+  if (!enter3D()) return;
+  G.fp = { x, y, z: surfaceAt(x, y).z, eye: 1.7, yaw, pitch: 0, fov: 60 };
+  S.editB = false; S.editP = false; closeMenu();
+  $('fpBox').hidden = false; fpSync(); S.dirty = true;
+  let vh = 0; const V = S.veg;   // végétation basse du LiDAR au point : elle peut masquer la vue
+  if (V && V.h && S.showTrees) { const ppm = pxPerM(); for (let a = 0; a < 8; a++) { const X = x + Math.cos(a) * 2 * ppm, Y = y + Math.sin(a) * 2 * ppm, i = Math.floor(X / ppm / V.cell), j = Math.floor(Y / ppm / V.cell); if (i >= 0 && j >= 0 && i < V.nx && j < V.ny) vh = Math.max(vh, V.h[j * V.nx + i]); } }
+  status('Vue d\'une personne : glisser pour tourner la tête, molette (ou pincer) pour zoomer ; Échap ou « Quitter » pour revenir.' +
+    (vh > 1 && G.fp.eye < vh + 0.5 ? ' Le LiDAR voit ici une végétation ou des objets de ' + fmtNum(vh, 1) + ' m (haies, stands, véhicules…) : décochez « Arbres » s\'ils masquent la vue.' : ''), true);
+}
+function fpExit() { G.fp = null; $('fpBox').hidden = true; S.dirty = true; changed(); }
+function fpSync() {
+  const f = G.fp; if (!f) return;
+  const box = $('fpBox'); box.style.top = (isMobile() ? dialLayout().rect.h + 4 : 8) + 'px';
+  if (document.activeElement !== $('fpAlt')) $('fpAlt').value = fmtNum(f.z + zRef(), 2);
+  if (document.activeElement !== $('fpEye')) $('fpEye').value = fmtNum(f.eye, 2);
+  const card = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'], az = mod((f.yaw - S.north * D2R) * R2D, 360);
+  const focal = 18 / Math.tan(f.fov * D2R / 2);   // focale équivalente 24 × 36 (hauteur de l'image)
+  $('fpInfo').textContent = 'Regard : ' + Math.round(az) + '° (' + card[Math.round(az / 22.5) % 16] + '), ' + (f.pitch >= 0 ? '+' : '−') + fmtNum(Math.abs(f.pitch * R2D), 0) + '° · champ ' + Math.round(f.fov) + '° (≈ ' + Math.round(focal) + ' mm)';
+}
+attachScrub($('fpAlt'), (n, e) => { if (!G.fp) return; G.fp.z += n * (e.shiftKey ? 0.1 : 1); fpSync(); S.dirty = true; }, document.querySelector('.drag[data-for="fpAlt"]'));
+attachScrub($('fpEye'), (n, e) => { if (!G.fp) return; G.fp.eye = clamp(Math.round((G.fp.eye + n * (e.shiftKey ? 0.01 : 0.1)) * 100) / 100, 0, 500); fpSync(); S.dirty = true; }, document.querySelector('.drag[data-for="fpEye"]'));
+$('fpAlt').addEventListener('change', e => { const v = parseNum(e.target.value); if (G.fp && isFinite(v)) { G.fp.z = v - zRef(); S.dirty = true; } fpSync(); e.target.blur(); });
+$('fpEye').addEventListener('change', e => { const v = parseNum(e.target.value); if (G.fp && isFinite(v)) { G.fp.eye = clamp(v, 0, 500); S.dirty = true; } fpSync(); e.target.blur(); });
+for (const id of ['fpAlt', 'fpEye']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') e.target.blur(); e.stopPropagation(); });
+$('fpQuit').onclick = () => { fpExit(); };
+$('fpNorth').onclick = () => { if (G.fp) { G.fp.yaw = S.north * D2R; fpSync(); S.dirty = true; } };
+$('fpLevel').onclick = () => { if (G.fp) { G.fp.pitch = 0; fpSync(); S.dirty = true; } };
+$('fpWide').onclick = () => { if (G.fp) { G.fp.fov = 60; fpSync(); S.dirty = true; } };
 $('pvShade').addEventListener('click', e => { if (e.target.id === 'pvShade') $('pvShade').hidden = true; });
 $('helpShade').addEventListener('click', e => { if (e.target.id === 'helpShade') showHelp(false); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('helpShade').hidden) { showHelp(false); e.stopPropagation(); } }, true);
@@ -3092,6 +3142,7 @@ function dialMove(d, p) {
 /** Molette sur le cadran : sauts de « Pas du cadran » heures, calés sur midi. */
 /** Tourne la vue (2D ou 3D) de da rad dans le sens horaire ; null = nord en haut. */
 function rotateView(da) {
+  if (G.fp) { G.fp.yaw = da === null ? S.north * D2R : mod(G.fp.yaw - da + Math.PI, 2 * Math.PI) - Math.PI; S.dirty = true; return; }
   if (S.view3d) { G.cam.yaw = da === null ? S.north * D2R : mod(G.cam.yaw - da + Math.PI, 2 * Math.PI) - Math.PI; }
   else { const c = toW({ x: CW / 2, y: CH / 2 }); setView(c.x, c.y, V.s, da === null ? -S.north * D2R : mod(V.rot + da + Math.PI, 2 * Math.PI) - Math.PI); }
   S.dirty = true;
@@ -4258,7 +4309,14 @@ function buildProject() {
   }
   setBuf('ground', gg);
 }
+const fovNow = () => G.fp ? G.fp.fov * D2R : G.fov;
 function camInfo(cw = CW, ch = CH) {
+  if (G.fp) {   // vue piéton : œil au point choisi, regard selon cap (yaw) et site (pitch)
+    const f = G.fp, ppm = pxPerM(), cp = Math.cos(f.pitch), d = [Math.sin(f.yaw) * cp, Math.sin(f.pitch), -Math.cos(f.yaw) * cp];
+    const eye = [f.x, (f.z + f.eye) * ppm, f.y], target = v3.add(eye, v3.mul(d, 10 * ppm)), up = [0, 1, 0];
+    const far = S.farOn && S.far ? 320000 * ppm : Math.max(S.clean.width, S.clean.height) * 3 + 20000 * ppm;
+    return { eye, target, up, VP: m4mul(m4persp(f.fov * D2R, cw / ch, 0.4 * ppm, far), m4look(eye, target, up)) };
+  }
   const c = G.cam, g = [Math.sin(c.yaw), 0, -Math.cos(c.yaw)], cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
   const ty = S.terrain ? terrainAt(c.tx, c.tz) * pxPerM() : 0;
   const target = [c.tx, ty, c.tz], eye = [c.tx - c.dist * sp * g[0], ty + c.dist * cp, c.tz - c.dist * sp * g[2]], up = [cp * g[0], sp, cp * g[2]];
@@ -4370,6 +4428,7 @@ function toScreen3(VP, p, cw = CW, ch = CH) {
 }
 function overlay3d(ci, sun, ctx = octx, k = DPR) {
   ctx.setTransform(k, 0, 0, k, 0, 0); ctx.clearRect(0, 0, CW, CH);
+  if (G.fp && ctx === octx) fpSync();
   const ppm = pxPerM(), P = new Placer(CW, CH);
   P.add(dialLayout().rect);
   ctx.font = 'bold 12px system-ui, sans-serif';
@@ -4396,13 +4455,13 @@ function overlay3d(ci, sun, ctx = octx, k = DPR) {
   const { N } = northVecs(), nq = toScreen3(ci.VP, [ci.target[0] + N.x * G.cam.dist * 0.1, ci.target[1], ci.target[2] + N.y * G.cam.dist * 0.1]);
   let nx = 0, ny = -1; if (o && nq) { const l = Math.hypot(nq.x - o.x, nq.y - o.y); if (l > 1e-6) { nx = (nq.x - o.x) / l; ny = (nq.y - o.y) / l; } }
   drawDials(ctx, CW, CH, { x: nx, y: ny }, sun);
-  const yH = CH - 16 - (ctx === octx ? bottomInset() : 0), tH = isMobile() ? 'Vue 3D — 2 doigts : pincer, tourner, glisser = incliner' : 'Vue 3D — Maj + glisser : pivoter / incliner';
+  const yH = CH - 16 - (ctx === octx ? bottomInset() : 0), tH = G.fp ? 'Vue d\'une personne — glisser : tourner la tête · ' + (isMobile() ? 'pincer' : 'molette') + ' : zoom' : isMobile() ? 'Vue 3D — 2 doigts : pincer, tourner, glisser = incliner' : 'Vue 3D — Maj + glisser : pivoter / incliner';
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(6, yH - 10, ctx.measureText(tH).width + 14, 20); ctx.fillStyle = '#334';
   ctx.fillText(tH, 12, yH);
 }
 /** Rayon issu d'un point de l'écran. */
 function ray3(sx, sy) {
-  const ci = camInfo(), f = v3.norm(v3.sub(ci.target, ci.eye)), r = v3.norm(v3.cross(f, ci.up)), u = v3.cross(r, f), t = Math.tan(G.fov / 2);
+  const ci = camInfo(), f = v3.norm(v3.sub(ci.target, ci.eye)), r = v3.norm(v3.cross(f, ci.up)), u = v3.cross(r, f), t = Math.tan(fovNow() / 2);
   const nx = 2 * sx / CW - 1, ny = 1 - 2 * sy / CH;
   return { o: ci.eye, d: v3.norm(v3.add(f, v3.add(v3.mul(r, nx * t * CW / CH), v3.mul(u, ny * t)))) };
 }
@@ -4476,6 +4535,7 @@ function enter3D(flat) {
 }
 function exit3D() {
   if (!S.view3d) return;
+  if (G.fp) fpExit();
   G.cam.pitch = 0;
   const s = CH / (2 * G.cam.dist * Math.tan(G.fov / 2));
   setView3d(false);
@@ -4504,6 +4564,7 @@ glcv.addEventListener('pointerdown', e => {
   if (e.button === 2) { drag3 = { type: 'orbit', lx: e.clientX, ly: e.clientY, sx: e.clientX, sy: e.clientY, right: true }; return; }
   if (e.button !== 0) return;
   { const dk = dialHit(p); if (dk) { drag3 = dialDown(p, dk); return; } }
+  if (G.fp) return startOrbit(e);   // vue piéton : glisser = tourner la tête
   if (S.roofEdit && roofDown(p)) { drag3 = { type: 'roof' }; return; }
   if (S.ruler) { if (S.ruler.live) { const q = ground3pt(p.x, p.y); if (q) S.ruler.b = q; S.ruler.live = false; S.dirty = true; return; } S.ruler = null; S.dirty = true; }
   if (e.shiftKey) return startOrbit(e);
@@ -4557,6 +4618,11 @@ glcv.addEventListener('pointermove', e => {
     if (drag3.right && !drag3.moved && Math.hypot(e.clientX - drag3.sx, e.clientY - drag3.sy) < 6) return;
     if (!drag3.moved) closePop();
     drag3.moved = true;
+    if (G.fp) {   // on « attrape » le paysage : glisser à droite tourne le regard vers la gauche
+      const k = G.fp.fov * D2R / Math.max(CH, 1);
+      G.fp.yaw = mod(G.fp.yaw - dx * k + Math.PI, 2 * Math.PI) - Math.PI; G.fp.pitch = clamp(G.fp.pitch + dy * k, -85 * D2R, 85 * D2R);
+      S.dirty = true; return;
+    }
     G.cam.yaw = mod(G.cam.yaw + dx * 0.006 + Math.PI, 2 * Math.PI) - Math.PI;
     G.cam.pitch = clamp(G.cam.pitch - dy * 0.006, 0, 80 * D2R);
   } else if (drag3.type === 'move3' || drag3.type === 'rot3' || drag3.type === 'size3') {
@@ -4588,7 +4654,7 @@ glcv.addEventListener('pointerup', e => {
   if (drag3 && drag3.right && !drag3.moved) context3D(ev3(e), e.clientX, e.clientY);
   const wasOrbit = drag3 && drag3.type === 'orbit' && drag3.moved;
   drag3 = null; glcv.style.cursor = 'default';
-  if (wasOrbit && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D, même orientation
+  if (wasOrbit && !G.fp && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D, même orientation
   changed();
 });
 glcv.addEventListener('dblclick', e => {
@@ -4614,6 +4680,7 @@ glcv.addEventListener('wheel', e => {
   e.preventDefault();
   if (S.dialZoomMenu) return dialZoomWheel(e);
   { const dk = dialHit(ev3(e)); if (dk) return dialWheelEvt(dk, e); }
+  if (G.fp) { G.fp.fov = clamp(G.fp.fov * Math.exp(normWheel(e) * 0.0012), 4, 110); S.dirty = true; fpSync(); return; }   // vue piéton : zoom
   const p = ev3(e), f = Math.exp(normWheel(e) * 0.0015), g = ground3(p.x, p.y);
   const nd = clamp(G.cam.dist * f, 5, maxDist3D()), k = nd / G.cam.dist;
   if (g) { G.cam.tx = g[0] + (G.cam.tx - g[0]) * k; G.cam.tz = g[2] + (G.cam.tz - g[2]) * k; }
@@ -5002,7 +5069,8 @@ function touchGestures(el, is3d) {
     // 2D : deux doigts qui montent ensemble (sans pincer ni tourner) = passage en 3D, puis inclinaison
     if (!S.view3d && !g.turn && Math.abs(k - 1) < 0.12 && g.m.y - q.m.y > 40 && Math.abs(q.m.x - g.m.x) < 0.5 * (g.m.y - q.m.y) && enter3D(true)) { g.c3 = { cam: { ...G.cam }, m: q.m, d: q.d, a: q.a }; S.dirty = true; return; }
     if (S.view3d) {
-      if (!g.c3) g.c3 = { cam: is3d ? g.cam : { ...G.cam }, m: is3d ? g.m : q.m, d: is3d ? g.d : q.d, a: is3d ? g.a : q.a };
+      if (!g.c3) g.c3 = { cam: is3d ? g.cam : { ...G.cam }, m: is3d ? g.m : q.m, d: is3d ? g.d : q.d, a: is3d ? g.a : q.a, fp: G.fp ? { ...G.fp } : null };
+      if (G.fp && g.c3.fp) { G.fp.fov = clamp(g.c3.fp.fov * g.c3.d / q.d, 4, 110); G.fp.pitch = clamp(g.c3.fp.pitch + (q.m.y - g.c3.m.y) * G.fp.fov * D2R / CH, -85 * D2R, 85 * D2R); S.dirty = true; fpSync(); return; }
       const c3 = g.c3, far = maxDist3D(), a3 = g.turn ? Math.atan2(Math.sin(q.a - c3.a), Math.cos(q.a - c3.a)) : 0;
       G.cam.dist = clamp(c3.cam.dist * c3.d / q.d, 5, far);
       G.cam.yaw = mod(c3.cam.yaw - a3 + Math.PI, 2 * Math.PI) - Math.PI;
@@ -5022,7 +5090,7 @@ function touchGestures(el, is3d) {
     if (touch.g && touch.pts.size < 2) {
       touch.g = null;
       for (const id of touch.pts.keys()) touch.eat.add(id);   // le doigt restant ne reprend pas un glissement
-      if (S.view3d && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D
+      if (S.view3d && !G.fp && G.cam.pitch < 0.6 * D2R) exit3D();   // revenu à la verticale : vue 2D
       changed();
     }
   };
@@ -5129,7 +5197,7 @@ document.addEventListener('keydown', e => {
     case '+': S.height += 1; break;
     case '-': S.height = Math.max(0, S.height - 1); break;
     case ' ': togglePlay(); break;
-    case 'Escape': if (S.roofEdit) roofEditStop(); else setMode('select'); break;
+    case 'Escape': if (G.fp) fpExit(); else if (S.roofEdit) roofEditStop(); else setMode('select'); break;
     case 'Delete': if (S.buildings.length > 1) $('btnDelB').onclick(); break;
     default: done = false;
   }
