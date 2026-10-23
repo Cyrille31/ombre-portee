@@ -48,6 +48,22 @@ Il faut une connexion Internet au moment du chargement. Une fois enregistré, le
 
 **Agrandir la zone** : des poignées bleues sont placées aux coins et au milieu des bords du plan (en 2D et en 3D). Glissez-en une : le nouveau rectangle s'affiche avec ses dimensions, puis il est rechargé (jusqu'à 1 000 m de côté). Les immeubles ajoutés, la vue et les réglages sont conservés. Les bâtiments sont découpés au bord du plan : seules les parties sur le plan sont gardées.
 
+### Panneaux solaires
+
+Clic droit (appui long sur smartphone) sur le sol ou sur un toit → **☀ Panneau solaire ici** pose un panneau courant de 1,72 × 1,13 m, d'un rendement de 22 % (environ 430 Wc).
+
+- **Sur un toit en pente** (immeuble projeté ou construction voisine), le panneau reprend la pente et l'orientation du toit.
+- **Sur un toit plat**, il est parallèle au bord le plus favorable, avec l'inclinaison qui maximise la production annuelle, et il est déplacé si besoin pour ne pas déborder du toit.
+- **Au sol**, il est orienté et incliné au mieux (par exemple plein sud à 38° à Toulouse).
+- **Sa production instantanée** (en W, ciel clair, ombres des bâtiments, des arbres et du relief comprises) s'affiche dessus, en 2D comme en 3D. Le bord jaune marque son bas.
+- **À la souris ou au doigt**, on le sélectionne, puis on le déplace, le redimensionne (poignées carrées) ou le tourne (poignée ronde, Maj = pas de 15°), comme un immeuble.
+- **Clic droit sur le panneau** : longueur, largeur, inclinaison, orientation, hauteur du bas au-dessus du support, rendement ; orientation optimale, copie à côté, suppression.
+- **📊 Statistiques** : production annuelle (kWh) et mensuelle (graphique), production moyenne et crête en W et en W/m², perte due aux ombres.
+
+Le calcul est une estimation, à environ ±15 % près. Le rayonnement par ciel clair est calculé avec le modèle de Meinel, puis ramené au climat moyen mensuel par interpolation entre Toulouse et Lille selon la latitude. Il est recalé sur PVGIS et compte 14 % de pertes système. Les ombres sont calculées un jour sur six, toutes les 12 minutes. Pour un dimensionnement, comparez avec PVGIS.
+
+Un nouvel immeuble mesure 18 m de haut au départ.
+
 ### Relief lointain
 
 La case **Relief lointain** (décochée au lancement) télécharge, autour de l'adresse du site, le relief à 100 m sur 50 km et à 1 km jusqu'à 250 km (RGE ALTI en France, SRTM au-delà : Pyrénées espagnoles et Alpes comprises), avec la photo (et les noms des villes : plus de 5 000 habitants à moins de 25 km, plus de 40 000 au-delà) ou le plan IGN selon la case « Photo ». Sur 5 km autour du plan, l'image est bien plus fine (environ 2,7 m par pixel, relief à la maille de 100 m). Comptez une quinzaine de secondes ; changer de fond télécharge l'autre jeu d'images à la demande. « Zone de » ne règle que la carte de travail, qui reste précise (bâtiments, LiDAR).
