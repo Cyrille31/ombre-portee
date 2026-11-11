@@ -2203,12 +2203,12 @@ async function fetchLayers(bb, pw, ph, noCad) {
   }
   return { L, errs };
 }
-function composeLayers(L) {
+function composeLayers(L, noCad) {
   const any = L.plan || L.ortho || L.cad || L.blank, c = document.createElement('canvas'); c.width = any.width; c.height = any.height;
   const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   const base = S.bgMode === 'ortho' ? L.ortho : S.bgMode === 'plan' ? L.plan : null;   // couche absente : fond blanc et ⚠ (nouvel essai en cours)
   if (base) x.drawImage(base, 0, 0);
-  if (S.showCad && L.cad) x.drawImage(L.cad, 0, 0);
+  if (S.showCad && L.cad && !noCad) x.drawImage(L.cad, 0, 0);   // noCad : texture des toits, sans traits ni numéros de parcelles
   if (L.names && S.bgMode !== 'plan') x.drawImage(L.names, 0, 0);   // noms des villes (le plan IGN les porte déjà)
   return c;
 }
@@ -2555,7 +2555,7 @@ function locateMe(auto) {
 }
 $('btnLocate').onclick = () => locateMe(false);
 /* ------------------------------------------------------------ Mode d'emploi, version, licence */
-const APP_VERSION = '1.4', APP_DATE = 'octobre 2026';
+const APP_VERSION = '1.4.1', APP_DATE = 'octobre 2026';
 $('helpVer').textContent = 'version ' + APP_VERSION;
 $('helpVer2').innerHTML = '<b>Ombre portée</b>, version ' + APP_VERSION + ' (' + APP_DATE + '). CGExcel — Cyrille Gindre — © 2026.<br><b>Licence MIT + BAL 1.0 — Bonne Action License</b> : utilisation, copie, modification et diffusion libres, sans garantie. En échange, une seule chose vous est demandée, sur l\'honneur : faire une bonne action chaque jour. Aider un voisin, sourire à un inconnu, ramasser un papier… c\'est vous qui voyez.<br>Code source : <a href="https://github.com/Cyrille31/ombre-portee" target="_blank" rel="noopener">github.com/Cyrille31/ombre-portee</a>.';
 const showHelp = on => { $('helpShade').hidden = !on; if (on) closeMenu(); };
@@ -4020,7 +4020,7 @@ out vec3 vPos; out vec3 vNor; out vec4 vCol; out float vId; out vec4 vL; out vec
 void main() { vPos = aPos; vNor = aNor; vCol = aCol; vId = aId; vUV = aUV; vFac = aFac; vL = uLVP * vec4(aPos + aNor * uNOff, 1.0); gl_Position = uVP * vec4(aPos, 1.0); }`;
 const FS_MAIN = `#version 300 es
 precision highp float; precision highp sampler2DShadow;
-uniform sampler2D uPlan; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
+uniform sampler2D uPlan; uniform sampler2D uPlanR; uniform sampler2DShadow uShadow; uniform sampler2DShadow uShadowT;
 uniform vec2 uPlanSize; uniform vec3 uSun; uniform float uSunUp; uniform float uTexel; uniform float uTexelT;
 uniform float uBright; uniform float uContrast; uniform float uTreeOpa; uniform float uShadowK; uniform float uRelief;
 uniform vec2 uPlanOrig; uniform float uFar; uniform vec3 uEye; uniform float uFog; uniform vec4 uHole;
@@ -4077,7 +4077,8 @@ void main() {
   float nd = dot(n, uSun), l = nd > 0.0 ? lit() : 0.0, k;
   // vCol.a : 0 = texture du plan, 0,6 = feuillage, 0,7 = tronc, 1 = couleur fixe
   bool tex = vCol.a < 0.3, tree = vCol.a > 0.3 && vCol.a < 0.8, crown = vCol.a > 0.3 && vCol.a < 0.65;
-  vec3 base = tex ? texture(uPlan, (vPos.xz - uPlanOrig) / uPlanSize).rgb : vCol.rgb;
+  vec2 tc = (vPos.xz - uPlanOrig) / uPlanSize;   // toits « photo » des constructions (vId > 0) : photo sans le cadastre
+  vec3 base = tex ? (vId > 0.5 ? texture(uPlanR, tc).rgb : texture(uPlan, tc).rgb) : vCol.rgb;
   float sw = 0.0;   // poids du raccord : 1 au bord du niveau plus fin, 0 au-delà de uSeamFade
   if (uFar > 0.5 && uSeamFade > 0.0) {
     vec4 r = uSeam; vec2 q = clamp(vPos.xz, r.xy, r.zw);
@@ -4164,9 +4165,13 @@ function uploadTextures() {
   const gl = G.gl;
   if (G.planSrc !== S.clean) {
     G.planSrc = S.clean;
-    let src = S.clean; const k = Math.min(1, texCap() / Math.max(src.width, src.height));
+    // toits : même fond, mais sans le cadastre (sinon ses traits et numéros de parcelles s'impriment sur les toits)
+    const noCad = S.layers && S.layers.cad && S.showCad ? composeLayers(S.layers, true) : null;
+    G.roofTexOwn = !!noCad;
+    for (const [tex, src0] of noCad ? [[G.planTex, S.clean], [G.planTexR = G.planTexR || gl.createTexture(), noCad]] : [[G.planTex, S.clean]]) {
+    let src = src0; const k = Math.min(1, texCap() / Math.max(src.width, src.height));
     if (k < 1) { const c = document.createElement('canvas'); c.width = Math.floor(src.width * k); c.height = Math.floor(src.height * k); c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); src = c; }
-    gl.bindTexture(gl.TEXTURE_2D, G.planTex);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
     gl.generateMipmap(gl.TEXTURE_2D);
@@ -4174,6 +4179,7 @@ function uploadTextures() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (G.aniso) gl.texParameterf(gl.TEXTURE_2D, G.aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+    }
   }
   const ver = NB ? NB.ver : 0;
   if (G.idsVer !== ver) {
@@ -4435,6 +4441,7 @@ function draw3d() {
   gl.uniformMatrix4fv(m.u.uVP, false, ci.VP); gl.uniformMatrix4fv(m.u.uLVP, false, LVP);
   gl.uniform1f(m.u.uNOff, (x1 - x0) / G.sm * 1.5);
   gl.uniform2f(m.u.uPlanSize, W, H); gl.uniform3fv(m.u.uSun, L); gl.uniform1f(m.u.uSunUp, up ? 1 : 0); gl.uniform1f(m.u.uTexel, 1 / G.sm);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, G.roofTexOwn ? G.planTexR : G.planTex); gl.uniform1i(m.u.uPlanR, 4);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, G.planTex); gl.uniform1i(m.u.uPlan, 0);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, G.idsTex); gl.uniform1i(m.u.uIds, 1); gl.uniform1f(m.u.uIdScale, NB ? NB.f : 1);
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, G.shadowTex); gl.uniform1i(m.u.uShadow, 2);
